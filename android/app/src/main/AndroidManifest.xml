@@ -19,11 +19,18 @@
          debug/profile, nên bản release phải tự khai ở đây. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Truyền tệp ngang hàng trong LAN: dò thiết bị bằng UDP broadcast. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
 
+    <!-- usesCleartextTraffic: máy chủ nhận tệp chạy HTTP thường trong mạng nội
+         bộ; không có chứng chỉ TLS nào cấp được cho IP LAN đổi liên tục.
+         Phần đồng bộ Back4App vẫn đi HTTPS như cũ. -->
     <application
         android:label="Trợ lý"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

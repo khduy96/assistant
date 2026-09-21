@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'clipboard/data/app_database.dart';
 import 'clipboard/state/clipboard_store.dart';
 import 'clipboard/ui/clip_tabs.dart';
+import 'p2p/state/p2p_store.dart';
 import 'services/background_service.dart';
 import 'services/memory_trim.dart';
 import 'services/android_alarm_service.dart';
@@ -73,6 +74,8 @@ class _EventNoticeAppState extends State<EventNoticeApp>
   late final ReminderStore _store = ReminderStore(notifications: _notifications);
   final TodoStore _todos = TodoStore();
   final NoteStore _notes = NoteStore();
+  /// Truyền tệp thẳng giữa các máy trong LAN, không qua Back4App.
+  final P2pStore _p2p = P2pStore();
   // The todo list and the notes ride along on the clipboard's sync cycle, so
   // one "Đồng bộ ngay" and one timer cover everything the app keeps.
   late final ClipboardStore _clips = ClipboardStore(
@@ -113,6 +116,7 @@ class _EventNoticeAppState extends State<EventNoticeApp>
     await _todos.init();
     await _notes.init();
     await _clips.init();
+    await _p2p.init();
     _store.addListener(_updateBackgroundStatus);
     await _startBackgroundService();
     // Opened by tapping an alarm notification: show that alert straight away.
@@ -165,6 +169,7 @@ class _EventNoticeAppState extends State<EventNoticeApp>
     _todos.dispose();
     _notes.dispose();
     _clips.dispose();
+    _p2p.dispose();
     _clipTab.dispose();
     super.dispose();
   }
@@ -261,6 +266,7 @@ class _EventNoticeAppState extends State<EventNoticeApp>
         // values and disposed with this state, not by the providers.
         ChangeNotifierProvider<ClipboardStore>.value(value: _clips),
         ChangeNotifierProvider<ClipboardTabState>.value(value: _clipTab),
+        ChangeNotifierProvider<P2pStore>.value(value: _p2p),
       ],
       child: _buildApp(context),
     );

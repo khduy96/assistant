@@ -7,6 +7,7 @@ import '../clipboard/state/clipboard_store.dart';
 import '../clipboard/ui/clip_actions.dart';
 import '../clipboard/ui/clip_tabs.dart';
 import '../models/reminder.dart';
+import '../p2p/ui/p2p_tab.dart';
 import '../services/android_alarm_service.dart';
 import '../services/note_store.dart';
 import '../services/reminder_store.dart';
@@ -41,7 +42,10 @@ class HomePage extends StatelessWidget {
   /// splits into its four lists inside itself.
   static const _reminderTabs = 4;
   static const _clipboardTab = _reminderTabs;
-  static const _tabCount = _reminderTabs + 1;
+
+  /// Truyền tệp ngang hàng: tab cuối cùng, sau clipboard.
+  static const _p2pTab = _clipboardTab + 1;
+  static const _tabCount = _p2pTab + 1;
 
   Future<void> _add(BuildContext context, {required bool deadline}) async {
     final created = await showReminderEditor(
@@ -149,6 +153,8 @@ class HomePage extends StatelessWidget {
                     const Tab(
                         icon: Icon(Icons.content_paste_rounded),
                         text: 'Clipboard'),
+                    const Tab(
+                        icon: Icon(Icons.swap_horiz_rounded), text: 'Gửi tệp'),
                   ],
                 ),
               ),
@@ -160,6 +166,8 @@ class HomePage extends StatelessWidget {
                   _clipboardTab => clips.isSelecting
                       ? const SizedBox.shrink()
                       : clipboardFab(context, clipTab.section),
+                  // Gửi tệp bắt đầu từ nút trên từng thiết bị, không từ FAB.
+                  _p2pTab => const SizedBox.shrink(),
                   1 => FloatingActionButton.extended(
                       onPressed: () => _add(context, deadline: true),
                       icon: const Icon(Icons.hourglass_top),
@@ -220,6 +228,7 @@ class HomePage extends StatelessWidget {
                   TodoListView(store: todos),
                   NotesTab(store: notes),
                   const ClipboardTab(),
+                  const P2pTab(),
                 ],
               ),
             );
