@@ -14,6 +14,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
   private companion object {
     const val CHANNEL = "event_notice/alarm"
+
+    /** Tệp nhận được từ máy khác: đưa ra Download công cộng rồi mở lại. */
+    const val FILES_CHANNEL = "event_notice/files"
     const val NOTIFICATION_PERMISSION_REQUEST = 4201
   }
 
@@ -90,6 +93,33 @@ class MainActivity : FlutterActivity() {
         else -> result.notImplemented()
       }
     }
+
+    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FILES_CHANNEL)
+      .setMethodCallHandler { call, result ->
+        when (call.method) {
+          "isSupported" -> result.success(PublicFiles.isSupported)
+
+          "saveToDownloads" -> result.success(
+            PublicFiles.saveToDownloads(
+              this,
+              call.argument<String>("path") ?: "",
+              call.argument<String>("subDir") ?: "Trợ lý"
+            )
+          )
+
+          "openFile" -> result.success(
+            PublicFiles.openFile(
+              this,
+              call.argument<String>("uri") ?: "",
+              call.argument<String>("name") ?: ""
+            )
+          )
+
+          "openDownloads" -> result.success(PublicFiles.openDownloads(this))
+
+          else -> result.notImplemented()
+        }
+      }
   }
 
   /**

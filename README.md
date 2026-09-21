@@ -47,6 +47,51 @@ nhất là nó không lặp lại — một hạn chót chỉ tới một lần.
 
 Trên Windows, rê chuột vào icon khay sẽ thấy deadline gần nhất còn bao lâu.
 
+## Truyền tệp ngang hàng (tab "Gửi tệp")
+
+Chuyển tệp giữa điện thoại và máy tính **không qua internet, không qua Back4App**:
+hai máy nói chuyện thẳng với nhau trong cùng mạng Wi-Fi/LAN.
+
+- **Tự tìm nhau**: mỗi 3 giây app hét một gói JSON nhỏ tới `255.255.255.255:45699`
+  (tên máy, id, cổng HTTP), gửi riêng qua từng card mạng của máy. Dùng broadcast
+  "hạn cục bộ" chứ không phải `x.y.z.255` vì Dart không cho biết mặt nạ mạng —
+  đoán /24 sẽ trượt trên mạng /22 hay /16. Máy nào nghe được thì hiện trong danh
+  sách và **chào lại riêng (unicast)** để hai bên thấy nhau ngay; nhờ vậy điện
+  thoại Android vẫn được tìm thấy dù Wi-Fi của máy có lọc gói broadcast. Thiết bị
+  im lặng quá 15 giây là tự biến mất khỏi danh sách.
+- **Truyền**: mỗi máy mở một HTTP server nhỏ ở cổng `45700` (kẹt thì thử 45701…).
+  Gửi tệp là một `POST /upload`, thân request chính là nội dung tệp — chảy thành
+  luồng chứ không nạp cả tệp vào RAM, nên gửi file vài GB cũng được.
+- **Phải bấm "Nhận"**: tệp lạ gõ cửa thì hiện thẻ hỏi kèm tên máy gửi và dung
+  lượng; không trả lời trong 90 giây là tự từ chối. Bật "Tự nhận, không hỏi"
+  trong menu ⋮ nếu tin mạng nhà.
+- Ghi ra `.part` rồi mới đổi tên, trùng tên thì thành `tên (1).ext` — không bao
+  giờ đè tệp cũ. Huỷ giữa chừng thì phần đã ghi bị xoá.
+- Nơi lưu: Windows/macOS/Linux vào `Downloads\Trợ lý` (đổi được trong menu ⋮).
+  Android ghi tạm vào thư mục riêng của app rồi **chuyển tiếp ra
+  `Download/Trợ lý` bằng MediaStore** — app Files và mọi trình quản lý tệp đều
+  thấy, và không phải xin quyền bộ nhớ nào. Lý do phải làm vậy: từ Android 11
+  Google chặn đường `Android/data/<gói>` khỏi app Files, để tệp nằm đó thì
+  người dùng không lấy ra được. Android 9 trở xuống không có MediaStore kiểu
+  này nên tệp vẫn nằm trong thư mục riêng của app.
+- Nút 📂 cạnh dòng "Tệp nhận được lưu ở" mở thư mục đó (desktop) hoặc màn hình
+  Tải xuống của hệ thống (Android); mỗi lượt nhận xong còn có nút mở thẳng tệp.
+
+Cần cả hai máy **cùng một mạng** và Wi-Fi đó **không bật AP isolation**. Lần đầu
+chạy trên Windows, Firewall sẽ hỏi — phải cho phép ở mạng Private, không thì máy
+khác không gửi vào được.
+
+### Khi mạng chặn gói dò tìm
+
+Mạng công ty, mạng campus và Wi-Fi khách thường chặn gói broadcast giữa các máy,
+nên hai bên không tự thấy nhau dù vẫn gọi nhau được. Hai lối thoát trong tab:
+
+- Nút 🔄 **Tìm lại** ngoài việc quảng bá còn **chào riêng từng địa chỉ** trong dải
+  /24 của máy (254 gói unicast) — qua được phần lớn kiểu chặn broadcast.
+- Nút 🔗 **Thêm thiết bị bằng IP**: gõ địa chỉ đọc được trên thẻ trạng thái của máy
+  kia (thêm `:cổng` nếu khác 45700). App gọi `GET /info` để xác nhận, rồi giữ mục
+  đó trong danh sách và tự hỏi lại mỗi 15 giây. Danh sách này được lưu lại.
+
 ## Chạy và build
 
 ```bash
@@ -67,6 +112,9 @@ thư mục build, xoá đi là entry hỏng).
 - `lib/services/startup_service.dart` — bật/tắt tự khởi động cùng Windows
 - `lib/ui/alarm_screen.dart` — popup báo thức có đồng hồ
 - `lib/ui/home_page.dart`, `lib/ui/reminder_editor.dart` — danh sách và form tạo/sửa
+- `lib/p2p/services/discovery_service.dart` — dò thiết bị trong LAN bằng UDP broadcast
+- `lib/p2p/services/file_server.dart`, `file_sender.dart` — hai đầu của đường truyền HTTP
+- `lib/p2p/state/p2p_store.dart`, `lib/p2p/ui/p2p_tab.dart` — trạng thái và tab "Gửi tệp"
 - `tool/gen_assets.dart` — sinh `assets/sounds/alarm.wav` (chạy: `dart run tool/gen_assets.dart`)
 - `tool/gen_logo.dart` — sinh toàn bộ icon app từ logo (chạy: `flutter test tool/gen_logo.dart`)
 
