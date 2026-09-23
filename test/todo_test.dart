@@ -55,4 +55,19 @@ void main() {
     expect(back.completedAt, t.completedAt);
     expect(back.createdAt, t.createdAt);
   });
+
+  test('việc đã chuyển thành nhắc nhở giữ được liên kết', () {
+    final t = Todo(id: 't1', title: 'Gửi báo giá', reminderId: 'r9');
+
+    expect(Todo.fromJson(t.toJson()).reminderId, 'r9');
+    expect(
+      Todo.fromParse({...t.toParse(), 'objectId': 'srv1'}).reminderId,
+      'r9',
+    );
+  });
+
+  test('việc cũ chưa có liên kết thì đọc lại vẫn rỗng', () {
+    final old = Todo.fromJson({'id': 't1', 'title': 'Dọn bàn'});
+    expect(old.reminderId, isNull);
+  });
 }

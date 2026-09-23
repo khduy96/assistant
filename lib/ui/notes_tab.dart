@@ -4,6 +4,7 @@ import '../models/note.dart';
 import '../services/note_store.dart';
 import 'format.dart';
 import 'note_editor.dart';
+import 'note_view_page.dart';
 
 /// Opens the editor for a brand new note and stores it. Lives outside the tab
 /// so the home page's button can create one without reaching into its state.
@@ -115,6 +116,8 @@ class _NotesTabState extends State<NotesTab> {
                           itemCount: notes.length,
                           itemBuilder: (context, i) => _NoteCard(
                             note: notes[i],
+                            onOpen: () =>
+                                showNoteView(context, widget.store, notes[i]),
                             onEdit: () => _edit(notes[i]),
                             onDelete: () => _confirmDelete(notes[i]),
                             onTogglePin: () =>
@@ -132,12 +135,17 @@ class _NotesTabState extends State<NotesTab> {
 class _NoteCard extends StatelessWidget {
   const _NoteCard({
     required this.note,
+    required this.onOpen,
     required this.onEdit,
     required this.onDelete,
     required this.onTogglePin,
   });
 
   final Note note;
+
+  /// Tapping the card reads the note; editing is a deliberate second step.
+  final VoidCallback onOpen;
+
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTogglePin;
@@ -146,13 +154,13 @@ class _NoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tint = noteColorOf(note.color, theme.colorScheme);
-    final body = note.body.trim();
+    final body = note.preview;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       color: tint,
       child: InkWell(
-        onTap: onEdit,
+        onTap: onOpen,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
@@ -163,11 +171,22 @@ class _NoteCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      note.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
+                    Row(
+                      children: [
+                        if (note.markdown) ...[
+                          Icon(Icons.article_outlined,
+                              size: 15, color: theme.colorScheme.outline),
+                          const SizedBox(width: 5),
+                        ],
+                        Expanded(
+                          child: Text(
+                            note.displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
                     ),
                     if (body.isNotEmpty) ...[
                       const SizedBox(height: 4),

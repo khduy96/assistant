@@ -8,14 +8,20 @@ import 'format.dart';
 const _compactWidth = 600.0;
 
 /// Opens the create/edit form. Returns the edited reminder, or null if cancelled.
+///
+/// [draft] fills the form in without turning it into an edit: it is how a
+/// todo becomes a reminder, carrying its text and deadline across while the
+/// form still reads "Thêm".
 Future<Reminder?> showReminderEditor(
   BuildContext context, {
   Reminder? existing,
+  Reminder? draft,
   required String newId,
   bool asDeadline = false,
 }) {
   final editor = _ReminderEditor(
     existing: existing,
+    draft: draft,
     newId: newId,
     asDeadline: asDeadline,
   );
@@ -30,11 +36,15 @@ Future<Reminder?> showReminderEditor(
 class _ReminderEditor extends StatefulWidget {
   const _ReminderEditor({
     this.existing,
+    this.draft,
     required this.newId,
     this.asDeadline = false,
   });
 
   final Reminder? existing;
+
+  /// Starting values for a brand new entry; ignored when [existing] is set.
+  final Reminder? draft;
   final String newId;
 
   /// Creating a deadline instead of a repeating reminder.
@@ -49,23 +59,24 @@ class _ReminderEditorState extends State<_ReminderEditor> {
   static const _snoozeOptions = [1, 3, 5, 10, 15];
   static const _everyOptions = [30, 60, 90, 120, 180, 240];
 
-  late final _titleCtrl =
-      TextEditingController(text: widget.existing?.title ?? '');
-  late final _noteCtrl =
-      TextEditingController(text: widget.existing?.note ?? '');
+  /// Where the form's starting values come from: the entry being edited, or
+  /// the draft a conversion handed over.
+  Reminder? get _source => widget.existing ?? widget.draft;
 
-  late RepeatRule _repeat = widget.existing?.repeat ?? RepeatRule.once;
-  late DateTime _date = widget.existing?.date ?? DateTime.now();
-  late TimeOfDay _time = widget.existing?.time ??
+  late final _titleCtrl = TextEditingController(text: _source?.title ?? '');
+  late final _noteCtrl = TextEditingController(text: _source?.note ?? '');
+
+  late RepeatRule _repeat = _source?.repeat ?? RepeatRule.once;
+  late DateTime _date = _source?.date ?? DateTime.now();
+  late TimeOfDay _time = _source?.time ??
       TimeOfDay.fromDateTime(DateTime.now().add(const Duration(hours: 1)));
-  late final Set<int> _weekdays = {...?widget.existing?.weekdays};
-  late int _every = widget.existing?.repeatEveryMinutes ?? 0;
+  late final Set<int> _weekdays = {...?_source?.weekdays};
+  late int _every = _source?.repeatEveryMinutes ?? 0;
   late TimeOfDay _endTime =
-      widget.existing?.endTime ?? const TimeOfDay(hour: 22, minute: 0);
-  late final bool _isDeadline = widget.existing?.isDeadline ?? widget.asDeadline;
-  late int _lead =
-      widget.existing?.leadMinutes ?? (widget.asDeadline ? 60 : 0);
-  late int _snooze = widget.existing?.snoozeMinutes ?? 5;
+      _source?.endTime ?? const TimeOfDay(hour: 22, minute: 0);
+  late final bool _isDeadline = _source?.isDeadline ?? widget.asDeadline;
+  late int _lead = _source?.leadMinutes ?? (widget.asDeadline ? 60 : 0);
+  late int _snooze = _source?.snoozeMinutes ?? 5;
   String? _error;
 
   bool get _isNew => widget.existing == null;

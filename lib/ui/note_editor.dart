@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/note.dart';
+import 'note_markdown.dart';
 
 /// Below this width the form takes the whole screen instead of sitting in a
 /// dialog: on a phone a cramped dialog is worse than a normal page.
@@ -50,9 +51,15 @@ class _NoteEditorState extends State<_NoteEditor> {
       TextEditingController(text: widget.existing?.title ?? '');
   late final _bodyCtrl =
       TextEditingController(text: widget.existing?.body ?? '');
+  final _bodyFocus = FocusNode();
 
   late bool _pinned = widget.existing?.pinned ?? false;
+  late bool _markdown = widget.existing?.markdown ?? false;
   late NoteColor _color = widget.existing?.color ?? NoteColor.none;
+
+  /// Markdown notes can flip between writing and seeing the rendered result.
+  bool _preview = false;
+
   String? _error;
 
   bool get _isNew => widget.existing == null;
@@ -61,7 +68,41 @@ class _NoteEditorState extends State<_NoteEditor> {
   void dispose() {
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
+    _bodyFocus.dispose();
     super.dispose();
+  }
+
+  /// Wraps the selection (or drops a placeholder) with [action]'s syntax and
+  /// leaves the cursor where the user is going to keep typing.
+  void _insert(_MdAction action) {
+    final text = _bodyCtrl.text;
+    final sel = _bodyCtrl.selection.isValid
+        ? _bodyCtrl.selection
+        : TextSelection.collapsed(offset: text.length);
+
+    final selected = sel.textInside(text);
+    final content = selected.isEmpty ? action.placeholder : selected;
+
+    // A block snippet has to start on a line of its own.
+    var before = action.before;
+    if (action.block &&
+        sel.start > 0 &&
+        !text.substring(0, sel.start).endsWith('\n')) {
+      before = '\n$before';
+    }
+
+    final inserted = '$before$content${action.after}';
+    final start = sel.start + before.length;
+
+    _bodyCtrl.value = TextEditingValue(
+      text: text.replaceRange(sel.start, sel.end, inserted),
+      // Nothing was selected and there is a placeholder: select it so the next
+      // keystroke replaces it. Otherwise just sit after what was inserted.
+      selection: selected.isEmpty && content.isNotEmpty
+          ? TextSelection(baseOffset: start, extentOffset: start + content.length)
+          : TextSelection.collapsed(offset: sel.start + inserted.length),
+    );
+    _bodyFocus.requestFocus();
   }
 
   void _submit() {
@@ -76,6 +117,7 @@ class _NoteEditorState extends State<_NoteEditor> {
       title: title,
       body: body,
       pinned: _pinned,
+      markdown: _markdown,
       color: _color,
       createdAt: widget.existing?.createdAt,
       updatedAt: widget.existing?.updatedAt,
@@ -138,22 +180,80 @@ class _NoteEditorState extends State<_NoteEditor> {
           ),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _bodyCtrl,
-          // On a phone the page scrolls, so the field can grow; in the dialog
-          // it is capped and scrolls inside itself.
-          minLines: compact ? 8 : 6,
-          maxLines: compact ? null : 12,
-          keyboardType: TextInputType.multiline,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Nội dung',
-            hintText: 'Gõ bất cứ thứ gì bạn muốn nhớ...',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Nội dung', style: theme.textTheme.labelLarge),
+            ),
+            if (_markdown)
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Soạn'),
+                    icon: Icon(Icons.edit_outlined, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Xem trước'),
+                    icon: Icon(Icons.visibility_outlined, size: 16),
+                  ),
+                ],
+                selected: {_preview},
+                onSelectionChanged: (s) => setState(() => _preview = s.first),
+              ),
+          ],
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 8),
+        if (_markdown && !_preview) ...[
+          _MarkdownToolbar(onInsert: _insert),
+          const SizedBox(height: 8),
+        ],
+        if (_markdown && _preview)
+          _PreviewBox(
+            data: _bodyCtrl.text.trim(),
+            minHeight: compact ? 220 : 180,
+          )
+        else
+          TextField(
+            controller: _bodyCtrl,
+            focusNode: _bodyFocus,
+            // On a phone the page scrolls, so the field can grow; in the dialog
+            // it is capped and scrolls inside itself.
+            minLines: compact ? 8 : 6,
+            maxLines: compact ? null : 12,
+            keyboardType: TextInputType.multiline,
+            textCapitalization: _markdown
+                ? TextCapitalization.none
+                : TextCapitalization.sentences,
+            style: _markdown
+                ? const TextStyle(fontFamily: 'monospace', fontSize: 14)
+                : null,
+            decoration: InputDecoration(
+              hintText: _markdown
+                  ? '# Tiêu đề\n\n- Gạch đầu dòng\n[Liên kết](https://example.com)'
+                  : 'Gõ bất cứ thứ gì bạn muốn nhớ...',
+              border: const OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+        const SizedBox(height: 6),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _markdown,
+          onChanged: (v) => setState(() {
+            _markdown = v;
+            if (!v) _preview = false;
+          }),
+          title: const Text('Viết bằng Markdown'),
+          subtitle: const Text('Bảng, liên kết, tiêu đề, danh sách, code...'),
+        ),
+        const SizedBox(height: 12),
         Text('Màu nhãn', style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
         Wrap(
@@ -221,6 +321,182 @@ class _ColorDot extends StatelessWidget {
                   size: 18, color: scheme.outline)
               : null,
         ),
+      ),
+    );
+  }
+}
+
+/// One button on the Markdown toolbar: what to put around the selection.
+class _MdAction {
+  const _MdAction({
+    required this.icon,
+    required this.tooltip,
+    this.before = '',
+    this.after = '',
+    this.placeholder = '',
+    this.block = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+
+  /// Text put in front of the selection, and after it.
+  final String before;
+  final String after;
+
+  /// Dropped in when nothing is selected, and left selected so it can be typed
+  /// over straight away.
+  final String placeholder;
+
+  /// True for snippets that must start on their own line (table, list, quote).
+  final bool block;
+}
+
+const _mdActions = <_MdAction>[
+  _MdAction(
+    icon: Icons.format_bold,
+    tooltip: 'Đậm',
+    before: '**',
+    after: '**',
+    placeholder: 'chữ đậm',
+  ),
+  _MdAction(
+    icon: Icons.format_italic,
+    tooltip: 'Nghiêng',
+    before: '*',
+    after: '*',
+    placeholder: 'chữ nghiêng',
+  ),
+  _MdAction(
+    icon: Icons.title,
+    tooltip: 'Tiêu đề',
+    before: '## ',
+    placeholder: 'Tiêu đề',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.link,
+    tooltip: 'Liên kết',
+    before: '[',
+    after: '](https://)',
+    placeholder: 'tên liên kết',
+  ),
+  _MdAction(
+    icon: Icons.table_chart_outlined,
+    tooltip: 'Bảng',
+    before: '| Cột 1 | Cột 2 |\n| --- | --- |\n| A | B |\n',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.format_list_bulleted,
+    tooltip: 'Danh sách',
+    before: '- ',
+    placeholder: 'mục',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.format_list_numbered,
+    tooltip: 'Danh sách đánh số',
+    before: '1. ',
+    placeholder: 'mục',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.check_box_outlined,
+    tooltip: 'Ô tích',
+    before: '- [ ] ',
+    placeholder: 'việc cần làm',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.format_quote,
+    tooltip: 'Trích dẫn',
+    before: '> ',
+    placeholder: 'trích dẫn',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.code,
+    tooltip: 'Code',
+    before: '`',
+    after: '`',
+    placeholder: 'code',
+  ),
+  _MdAction(
+    icon: Icons.data_object,
+    tooltip: 'Khối code',
+    before: '```\n',
+    after: '\n```\n',
+    placeholder: 'code',
+    block: true,
+  ),
+  _MdAction(
+    icon: Icons.horizontal_rule,
+    tooltip: 'Đường kẻ',
+    before: '\n---\n',
+    block: true,
+  ),
+];
+
+/// The row of formatting buttons above the body field.
+class _MarkdownToolbar extends StatelessWidget {
+  const _MarkdownToolbar({required this.onInsert});
+
+  final void Function(_MdAction) onInsert;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final a in _mdActions)
+              IconButton(
+                icon: Icon(a.icon, size: 20),
+                tooltip: a.tooltip,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => onInsert(a),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The rendered body, shown in place of the text field while previewing.
+class _PreviewBox extends StatelessWidget {
+  const _PreviewBox({required this.data, required this.minHeight});
+
+  final String data;
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(minHeight: minHeight, maxHeight: 420),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: SingleChildScrollView(
+        child: data.isEmpty
+            ? Text(
+                'Chưa có gì để xem trước.',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.outline),
+              )
+            : NoteMarkdown(data: data, selectable: false),
       ),
     );
   }

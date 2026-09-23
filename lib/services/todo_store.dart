@@ -73,6 +73,15 @@ class TodoStore extends ChangeNotifier {
     await _persist();
   }
 
+  /// Records which reminder this item was turned into, or clears the link
+  /// with a null [reminderId] once that reminder is gone.
+  Future<void> linkReminder(Todo todo, String? reminderId) async {
+    if (todo.reminderId == reminderId) return;
+    todo.reminderId = reminderId;
+    todo.touch();
+    await _persist();
+  }
+
   Future<void> remove(String id) async {
     _forget(_todos.where((t) => t.id == id));
     _todos.removeWhere((t) => t.id == id);

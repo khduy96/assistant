@@ -13,6 +13,19 @@ extension NoteColorLabel on NoteColor {
       };
 }
 
+/// Drops the Markdown syntax from one line so it can be shown as plain text in
+/// a card or a title. Deliberately rough: this is a preview, not a renderer.
+String _stripMarkdown(String line) {
+  var s = line.trim();
+  s = s.replaceFirst(RegExp(r'^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+)'), '');
+  s = s.replaceAll(RegExp(r'^\s*[-*_]{3,}\s*$'), '');
+  // [text](url) and ![alt](url) keep only the visible part.
+  s = s.replaceAllMapped(
+      RegExp(r'!?\[([^\]]*)\]\([^)]*\)'), (m) => m.group(1) ?? '');
+  s = s.replaceAll(RegExp(r'(\*\*|__|\*|_|`|~~)'), '');
+  return s.trim();
+}
+
 /// A free-form note. It never rings and has no schedule — it is just text the
 /// user wants to keep, optionally pinned to the top of the list.
 class Note {
@@ -21,6 +34,7 @@ class Note {
     this.title = '',
     this.body = '',
     this.pinned = false,
+    this.markdown = false,
     this.color = NoteColor.none,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -33,6 +47,11 @@ class Note {
   String title;
   String body;
   bool pinned;
+
+  /// True when [body] is written in Markdown and should be rendered instead of
+  /// shown as plain text. Old notes default to false, so nothing changes look.
+  bool markdown;
+
   NoteColor color;
 
   final DateTime createdAt;
@@ -60,7 +79,20 @@ class Note {
         .split('\n')
         .map((l) => l.trim())
         .firstWhere((l) => l.isNotEmpty, orElse: () => '');
-    return firstLine.isEmpty ? 'Ghi chú không tên' : firstLine;
+    if (firstLine.isEmpty) return 'Ghi chú không tên';
+    return markdown ? _stripMarkdown(firstLine) : firstLine;
+  }
+
+  /// The few lines shown under the title on a card. A Markdown note is
+  /// stripped of its syntax first, so the card reads as text and not as `##`.
+  String get preview {
+    final text = body.trim();
+    if (!markdown) return text;
+    return text
+        .split('\n')
+        .map(_stripMarkdown)
+        .where((l) => l.isNotEmpty)
+        .join('\n');
   }
 
   bool get isEmpty => title.trim().isEmpty && body.trim().isEmpty;
@@ -77,6 +109,7 @@ class Note {
         'title': title,
         'body': body,
         'pinned': pinned,
+        'markdown': markdown,
         'color': color.name,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
@@ -89,6 +122,7 @@ class Note {
         title: j['title'] as String? ?? '',
         body: j['body'] as String? ?? '',
         pinned: j['pinned'] as bool? ?? false,
+        markdown: j['markdown'] as bool? ?? false,
         color: NoteColor.values.firstWhere(
           (c) => c.name == j['color'],
           orElse: () => NoteColor.none,
@@ -112,6 +146,7 @@ class Note {
         'title': title,
         'body': body,
         'pinned': pinned,
+        'markdown': markdown,
         'color': color.name,
         'noteCreatedAt': createdAt.millisecondsSinceEpoch,
         'noteUpdatedAt': updatedAt.millisecondsSinceEpoch,
@@ -131,6 +166,7 @@ class Note {
       title: (json['title'] as String?) ?? '',
       body: (json['body'] as String?) ?? '',
       pinned: json['pinned'] as bool? ?? false,
+      markdown: json['markdown'] as bool? ?? false,
       color: NoteColor.values.firstWhere(
         (c) => c.name == json['color'],
         orElse: () => NoteColor.none,
