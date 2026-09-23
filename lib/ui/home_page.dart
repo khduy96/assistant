@@ -225,7 +225,7 @@ class HomePage extends StatelessWidget {
                             onDelete: () => _confirmDelete(context, deadlines[i]),
                           ),
                         ),
-                  TodoListView(store: todos),
+                  TodoListView(store: todos, reminders: store),
                   NotesTab(store: notes),
                   const ClipboardTab(),
                   const P2pTab(),

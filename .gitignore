@@ -47,3 +47,29 @@ app.*.map.json
 # Cấu hình Back4App cho đồng bộ clipboard — không commit.
 .env
 .env.server
+.env.local
+.env.*.local
+# Giữ lại các file mẫu để người khác biết cần khai báo gì.
+!.env.example
+!.env.server.example
+
+# Khoá ký bản Android (bản sao ở thư mục gốc; android/.gitignore đã lo phần
+# trong android/).
+key.properties
+*.keystore
+*.jks
+
+# Flutter/Dart linh tinh
+.flutter-plugins
+.fvm/
+pubspec_overrides.yaml
+**/failures/
+
+# Claude Code: cấu hình và ghi chú riêng của từng máy.
+.claude/settings.local.json
+
+# Rác của hệ điều hành / trình soạn thảo
+Thumbs.db
+Desktop.ini
+*~
+*.tmp
