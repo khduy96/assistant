@@ -163,8 +163,9 @@ Lưu ý về pin: một số hãng (Xiaomi, Oppo, Vivo, Samsung) tắt báo th�
 
 ## Logo
 
-Logo là **vòng đếm ngược quanh mặt đồng hồ**: vành cam = thời gian còn lại trước
-khi chuông reo, kim trắng đọc rõ ngay cả ở 16px trong khay hệ thống. Màu nền dùng
+Logo là **bong bóng thoại chứa ngôi sao lấp lánh**: một trợ lý luôn sẵn sàng
+khi bạn cần. Ở 16–24px bỏ ngôi sao xanh nhỏ và phóng to ngôi sao hổ phách để vẫn
+đọc rõ trong khay hệ thống. Màu nền dùng
 chính seed color của app (`#2563EB`), điểm nhấn hổ phách `#F59E0B`.
 
 - Bản vector gốc: `assets/branding/logo.svg` (1024x1024)
