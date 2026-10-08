@@ -17,6 +17,7 @@ import '../services/todo_store.dart';
 import 'deadline_card.dart';
 import 'format.dart';
 import 'notes_tab.dart';
+import 'pomodoro_page.dart';
 import 'reminder_editor.dart';
 import 'todo_editor.dart';
 import 'todo_page.dart';
@@ -177,10 +178,31 @@ class HomePage extends StatelessWidget {
                   _p2pTab => const SizedBox.shrink(),
                   // Nút "Bắt đầu chạy chữ" đã nằm trong tab.
                   _runningTextTab => const SizedBox.shrink(),
-                  1 => FloatingActionButton.extended(
-                      onPressed: () => _add(context, deadline: true),
-                      icon: const Icon(Icons.hourglass_top),
-                      label: const Text('Thêm deadline'),
+                  1 => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FloatingActionButton.small(
+                          heroTag: 'pomodoro',
+                          tooltip: 'Đồng hồ Pomodoro',
+                          onPressed: () => openPomodoro(context),
+                          child: const Icon(Icons.timer_outlined),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'countdown',
+                          tooltip: 'Đồng hồ đếm ngược',
+                          onPressed: () => openCountdown(context),
+                          child: const Icon(Icons.hourglass_bottom),
+                        ),
+                        const SizedBox(height: 12),
+                        FloatingActionButton.extended(
+                          heroTag: 'add-deadline',
+                          onPressed: () => _add(context, deadline: true),
+                          icon: const Icon(Icons.hourglass_top),
+                          label: const Text('Thêm deadline'),
+                        ),
+                      ],
                     ),
                   2 => FloatingActionButton.extended(
                       onPressed: () => _addTodo(context),

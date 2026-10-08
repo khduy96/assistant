@@ -18,6 +18,7 @@ import 'services/startup_service.dart';
 import 'services/todo_store.dart';
 import 'ui/alarm_screen.dart';
 import 'ui/home_page.dart';
+import 'ui/pomodoro_page.dart';
 
 /// Desktop drives the alarm itself (window + tray); Android hands the schedule
 /// to the OS so it still rings with the app closed.
@@ -25,6 +26,13 @@ final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Cửa sổ đồng hồ riêng: không DB, không tray, không báo thức.
+  for (final flag in [pomodoroFlag, countdownFlag]) {
+    if (isDesktop && args.contains(flag)) {
+      await runClockWindow(flag);
+      return;
+    }
+  }
   // The clipboard history lives in SQLite; desktop needs the ffi engine.
   AppDatabase.initPlatform();
 
