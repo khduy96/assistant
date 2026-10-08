@@ -52,6 +52,7 @@ dependencies:
   flutter_markdown_plus: ^1.0.12
   url_launcher: ^6.3.2
   markdown: ^7.3.1
+  desktop_drop: ^0.8.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

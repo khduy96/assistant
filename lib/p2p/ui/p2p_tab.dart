@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -229,6 +230,111 @@ Future<void> _pickAndSend(
     ));
   }
   await store.sendFiles(peer, files);
+}
+
+/// Gửi các tệp được kéo thả vào thẻ của [peer]. Thư mục bị bỏ qua vì phía
+/// nhận chỉ hiểu từng tệp riêng lẻ.
+Future<void> _sendDropped(
+  BuildContext context,
+  P2pStore store,
+  Peer peer,
+  List<String> paths,
+) async {
+  final files = <OutgoingFile>[];
+  var skipped = 0;
+  for (final path in paths) {
+    if (FileSystemEntity.typeSync(path) != FileSystemEntityType.file) {
+      skipped++;
+      continue;
+    }
+    files.add(OutgoingFile.fromFile(File(path)));
+  }
+  if (skipped > 0 && context.mounted) {
+    _say(context, files.isEmpty
+        ? 'Chưa gửi được thư mục — kéo từng tệp bên trong vào.'
+        : 'Đã bỏ qua $skipped thư mục, chỉ gửi các tệp.');
+  }
+  if (files.isEmpty) return;
+  await store.sendFiles(peer, files);
+}
+
+/// Kéo thả chỉ có trên desktop.
+final _canDropFiles =
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+/// Bọc thẻ thiết bị để thả tệp vào là gửi luôn sang [peer]; sáng viền lên khi
+/// đang kéo ngang qua.
+class _PeerDropZone extends StatefulWidget {
+  const _PeerDropZone({
+    required this.store,
+    required this.peer,
+    required this.child,
+  });
+
+  final P2pStore store;
+  final Peer peer;
+  final Widget child;
+
+  @override
+  State<_PeerDropZone> createState() => _PeerDropZoneState();
+}
+
+class _PeerDropZoneState extends State<_PeerDropZone> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_canDropFiles) return widget.child;
+    final scheme = Theme.of(context).colorScheme;
+
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _hovering = true),
+      onDragExited: (_) => setState(() => _hovering = false),
+      onDragDone: (details) {
+        setState(() => _hovering = false);
+        _sendDropped(
+          context,
+          widget.store,
+          widget.peer,
+          [for (final item in details.files) item.path],
+        );
+      },
+      child: Stack(
+        children: [
+          widget.child,
+          if (_hovering)
+            Positioned.fill(
+              bottom: 8,
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.92),
+                    border: Border.all(color: scheme.primary, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.file_download_outlined,
+                          color: scheme.onPrimaryContainer),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Thả để gửi sang ${widget.peer.name}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: scheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StatusCard extends StatelessWidget {
@@ -469,18 +575,39 @@ class _PeerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Icon(_icon(peer.platform)),
-        title: Text(peer.name),
-        subtitle: Text('${peer.address}:${peer.port}'),
-        trailing: FilledButton.tonalIcon(
-          onPressed: () => _pickAndSend(context, store, peer),
-          icon: const Icon(Icons.upload_file),
-          label: const Text('Gửi tệp'),
+    return _PeerDropZone(
+      store: store,
+      peer: peer,
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: ListTile(
+          leading: Icon(_icon(peer.platform)),
+          title: Text(peer.name),
+          subtitle: Text('${peer.address}:${peer.port}'),
+          trailing: _SendButton(store: store, peer: peer),
         ),
       ),
+    );
+  }
+}
+
+class _SendButton extends StatelessWidget {
+  const _SendButton({required this.store, required this.peer});
+
+  final P2pStore store;
+  final Peer peer;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = FilledButton.tonalIcon(
+      onPressed: () => _pickAndSend(context, store, peer),
+      icon: const Icon(Icons.upload_file),
+      label: const Text('Gửi tệp'),
+    );
+    if (!_canDropFiles) return button;
+    return Tooltip(
+      message: 'Chọn tệp, hoặc kéo thả tệp vào thẻ này',
+      child: button,
     );
   }
 }
@@ -499,7 +626,7 @@ class _ManualTile extends StatelessWidget {
     final peer = store.manualPeer(entry);
     final online = peer != null;
 
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(
@@ -517,12 +644,7 @@ class _ManualTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (online)
-              FilledButton.tonalIcon(
-                onPressed: () => _pickAndSend(context, store, peer),
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Gửi tệp'),
-              ),
+            if (online) _SendButton(store: store, peer: peer),
             IconButton(
               tooltip: 'Bỏ khỏi danh sách',
               icon: const Icon(Icons.delete_outline),
@@ -532,6 +654,8 @@ class _ManualTile extends StatelessWidget {
         ),
       ),
     );
+    if (!online) return card;
+    return _PeerDropZone(store: store, peer: peer, child: card);
   }
 }
 
