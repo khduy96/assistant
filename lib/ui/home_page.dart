@@ -8,6 +8,7 @@ import '../clipboard/ui/clip_actions.dart';
 import '../clipboard/ui/clip_tabs.dart';
 import '../models/reminder.dart';
 import '../p2p/ui/p2p_tab.dart';
+import '../running_text/ui/running_text_tab.dart';
 import '../services/android_alarm_service.dart';
 import '../services/note_store.dart';
 import '../services/reminder_store.dart';
@@ -16,6 +17,7 @@ import '../services/todo_store.dart';
 import 'deadline_card.dart';
 import 'format.dart';
 import 'notes_tab.dart';
+import 'pomodoro_page.dart';
 import 'reminder_editor.dart';
 import 'todo_editor.dart';
 import 'todo_page.dart';
@@ -45,7 +47,10 @@ class HomePage extends StatelessWidget {
 
   /// Truyền tệp ngang hàng: tab cuối cùng, sau clipboard.
   static const _p2pTab = _clipboardTab + 1;
-  static const _tabCount = _p2pTab + 1;
+
+  /// Chạy chữ kiểu bảng LED.
+  static const _runningTextTab = _p2pTab + 1;
+  static const _tabCount = _runningTextTab + 1;
 
   Future<void> _add(BuildContext context, {required bool deadline}) async {
     final created = await showReminderEditor(
@@ -155,6 +160,9 @@ class HomePage extends StatelessWidget {
                         text: 'Clipboard'),
                     const Tab(
                         icon: Icon(Icons.swap_horiz_rounded), text: 'Gửi tệp'),
+                    const Tab(
+                        icon: Icon(Icons.text_rotation_none),
+                        text: 'Chạy chữ'),
                   ],
                 ),
               ),
@@ -168,10 +176,33 @@ class HomePage extends StatelessWidget {
                       : clipboardFab(context, clipTab.section),
                   // Gửi tệp bắt đầu từ nút trên từng thiết bị, không từ FAB.
                   _p2pTab => const SizedBox.shrink(),
-                  1 => FloatingActionButton.extended(
-                      onPressed: () => _add(context, deadline: true),
-                      icon: const Icon(Icons.hourglass_top),
-                      label: const Text('Thêm deadline'),
+                  // Nút "Bắt đầu chạy chữ" đã nằm trong tab.
+                  _runningTextTab => const SizedBox.shrink(),
+                  1 => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FloatingActionButton.small(
+                          heroTag: 'pomodoro',
+                          tooltip: 'Đồng hồ Pomodoro',
+                          onPressed: () => openPomodoro(context),
+                          child: const Icon(Icons.timer_outlined),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'countdown',
+                          tooltip: 'Đồng hồ đếm ngược',
+                          onPressed: () => openCountdown(context),
+                          child: const Icon(Icons.hourglass_bottom),
+                        ),
+                        const SizedBox(height: 12),
+                        FloatingActionButton.extended(
+                          heroTag: 'add-deadline',
+                          onPressed: () => _add(context, deadline: true),
+                          icon: const Icon(Icons.hourglass_top),
+                          label: const Text('Thêm deadline'),
+                        ),
+                      ],
                     ),
                   2 => FloatingActionButton.extended(
                       onPressed: () => _addTodo(context),
@@ -229,6 +260,7 @@ class HomePage extends StatelessWidget {
                   NotesTab(store: notes),
                   const ClipboardTab(),
                   const P2pTab(),
+                  const RunningTextTab(),
                 ],
               ),
             );
