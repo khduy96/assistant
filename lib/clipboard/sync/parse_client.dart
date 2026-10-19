@@ -25,11 +25,15 @@ class ParseException implements Exception {
 /// REST is used instead of the Parse SDK so the sync logic stays explicit and
 /// testable, and so nothing extra runs in the background without being asked.
 class ParseClient {
-  ParseClient(this.config, {http.Client? httpClient})
+  ParseClient(this.config, {http.Client? httpClient, this.onRequest})
       : _http = httpClient ?? http.Client();
 
   final ParseConfig config;
   final http.Client _http;
+
+  /// Called once per HTTP call, so the sync engine can meter its spend
+  /// against the Back4App request quota.
+  final void Function()? onRequest;
 
   static const Duration _timeout = Duration(seconds: 30);
 
@@ -70,10 +74,12 @@ class ParseClient {
   Future<Map<String, Object?>?> findOne(
     String className, {
     required Map<String, Object?> where,
+    String? order,
   }) async {
     final uri = config.classUri(className, {
       'where': jsonEncode(where),
       'limit': '1',
+      'order': ?order,
     });
     final body = await _get(uri);
     final results =
@@ -84,6 +90,7 @@ class ParseClient {
   /// Creates an object and returns its `objectId`.
   Future<String> create(
       String className, Map<String, Object?> data) async {
+    onRequest?.call();
     final response = await _http
         .post(config.classUri(className),
             headers: _jsonHeaders, body: jsonEncode(data))
@@ -92,18 +99,22 @@ class ParseClient {
     return body['objectId'] as String;
   }
 
-  Future<void> update(
+  /// Updates an object and returns Parse's answer, which carries the new
+  /// value of any field changed through an operator such as `Increment`.
+  Future<Map<String, Object?>> update(
       String className, String objectId, Map<String, Object?> data) async {
+    onRequest?.call();
     final response = await _http
         .put(config.objectUri(className, objectId),
             headers: _jsonHeaders, body: jsonEncode(data))
         .timeout(_timeout);
-    _decode(response);
+    return _decode(response);
   }
 
   /// Removes an object for good. An already-missing object counts as success,
   /// so a repeated delete does not block the queue.
   Future<void> delete(String className, String objectId) async {
+    onRequest?.call();
     final response = await _http
         .delete(config.objectUri(className, objectId), headers: _jsonHeaders)
         .timeout(_timeout);
@@ -120,6 +131,7 @@ class ParseClient {
   }
 
   Future<Map<String, Object?>> _get(Uri uri) async {
+    onRequest?.call();
     final response =
         await _http.get(uri, headers: config.headers).timeout(_timeout);
     return _decode(response);
