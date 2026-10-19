@@ -27,6 +27,10 @@ class NoteStore extends ChangeNotifier {
   /// The note list as the sync engine sees it.
   late final SyncCollection syncCollection = _NoteSyncCollection(this);
 
+  /// Called after a change made here (not one a sync applied), so the sync
+  /// engine can push it soon instead of on its next timer.
+  VoidCallback? onLocalChange;
+
   Future<void> init() async {
     final saved = await _storage.load();
     _notes.addAll(saved.items);
@@ -86,9 +90,10 @@ class NoteStore extends ChangeNotifier {
     });
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist({bool fromSync = false}) async {
     await _storage.save(_notes, _deleted);
     notifyListeners();
+    if (!fromSync) onLocalChange?.call();
   }
 }
 
@@ -127,7 +132,7 @@ class _NoteSyncCollection implements SyncCollection {
   @override
   Future<void> clearPendingDelete(String localId) async {
     _store._deleted.removeWhere((t) => t.localId == localId);
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 
   @override
@@ -136,7 +141,7 @@ class _NoteSyncCollection implements SyncCollection {
     if (note == null) return;
     note.remoteId = remoteId;
     note.dirty = false;
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 
   @override
@@ -158,13 +163,13 @@ class _NoteSyncCollection implements SyncCollection {
 
     _store._notes.add(incoming);
     _store._sort();
-    await _store._persist();
+    await _store._persist(fromSync: true);
     return true;
   }
 
   @override
   Future<void> removeLocalOnly(String localId) async {
     _store._notes.removeWhere((n) => n.id == localId);
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 }

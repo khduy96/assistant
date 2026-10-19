@@ -124,6 +124,9 @@ class _EventNoticeAppState extends State<EventNoticeApp>
     await _todos.init();
     await _notes.init();
     await _clips.init();
+    // Edits to todos and notes go out shortly, not on the next fallback tick.
+    _todos.onLocalChange = _clips.requestSync;
+    _notes.onLocalChange = _clips.requestSync;
     await _p2p.init();
     _store.addListener(_updateBackgroundStatus);
     await _startBackgroundService();
@@ -163,6 +166,7 @@ class _EventNoticeAppState extends State<EventNoticeApp>
     // The OS schedule holds a limited window of alerts; top it up on resume.
     _store.uiActive = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) _store.resync();
+    if (state == AppLifecycleState.resumed) _clips.onAppActive();
   }
 
   @override
@@ -194,6 +198,7 @@ class _EventNoticeAppState extends State<EventNoticeApp>
 
   Future<void> _showWindow() async {
     _store.uiActive = true;
+    _clips.onAppActive();
     await windowManager.setSkipTaskbar(false);
     await windowManager.show();
     await windowManager.focus();
@@ -246,7 +251,14 @@ class _EventNoticeAppState extends State<EventNoticeApp>
   }
 
   @override
-  void onWindowRestore() => _store.uiActive = true;
+  void onWindowRestore() {
+    _store.uiActive = true;
+    _clips.onAppActive();
+  }
+
+  /// Back from another app: pull, unless a cycle ran in the last few minutes.
+  @override
+  void onWindowFocus() => _clips.onAppActive();
 
   @override
   void onTrayIconMouseDown() => _showWindow();

@@ -290,16 +290,20 @@ class _SyncButton extends StatelessWidget {
 
     final configured = store.config.isConfigured;
     final failed = status.state == SyncState.error;
+    // Back4App meters requests per month; this device's share of it.
+    final spent = status.monthRequests == null
+        ? ''
+        : '\n${status.monthRequests} request tháng này (máy này)';
     return IconButton(
       tooltip: switch (status.state) {
         SyncState.notConfigured =>
           'Chưa cấu hình — build với --dart-define-from-file=.env để bật đồng bộ',
-        SyncState.error => 'Đồng bộ lỗi: ${status.message}',
+        SyncState.error => 'Đồng bộ lỗi: ${status.message}$spent',
         SyncState.ok => status.lastSyncAt == null
-            ? 'Đồng bộ ngay'
+            ? 'Đồng bộ ngay$spent'
             : 'Đồng bộ lần cuối ${formatRelative(status.lastSyncAt!)}'
-                ' · đẩy ${status.pushed}, nhận ${status.pulled}',
-        _ => 'Đồng bộ ngay (${store.config.space})',
+                ' · đẩy ${status.pushed}, nhận ${status.pulled}$spent',
+        _ => 'Đồng bộ ngay (${store.config.space})$spent',
       },
       icon: Icon(
         configured

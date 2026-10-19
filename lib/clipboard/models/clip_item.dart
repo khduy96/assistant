@@ -108,6 +108,7 @@ class ClipItem {
     String? note,
     int? copyCount,
     String? remoteId,
+    bool clearRemoteId = false,
     bool? dirty,
   }) {
     return ClipItem(
@@ -122,7 +123,7 @@ class ClipItem {
       groupId: clearGroup ? null : (groupId ?? this.groupId),
       note: note ?? this.note,
       copyCount: copyCount ?? this.copyCount,
-      remoteId: remoteId ?? this.remoteId,
+      remoteId: clearRemoteId ? null : (remoteId ?? this.remoteId),
       dirty: dirty ?? this.dirty,
     );
   }
