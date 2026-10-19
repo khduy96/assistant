@@ -20,6 +20,10 @@ class FakeParseServer {
   final Map<String, Map<String, Map<String, Object?>>> objects = {};
   final List<String> deletedIds = [];
 
+  /// Every request received, as `METHOD className`, to check what a sync
+  /// cycle spends against the quota.
+  final List<String> requests = [];
+
   int _counter = 0;
   int _clock = 0;
 
@@ -33,6 +37,34 @@ class FakeParseServer {
     final id = 'obj${++_counter}';
     classOf(className)[id] = {...data, 'objectId': id, 'updatedAt': _stamp()};
     return id;
+  }
+
+  /// Bumps a class's change counter, as another device does after a push.
+  void bump(String space, String className) {
+    final metas = classOf('SyncMeta');
+    final meta = metas.values.where((m) => m['space'] == space).firstOrNull ??
+        metas[seed('SyncMeta', {'space': space})]!;
+    final field = 'rev_$className';
+    meta[field] = ((meta[field] as num?) ?? 0) + 1;
+  }
+
+  /// Applies Parse operators (`Increment`) and returns the fields they set,
+  /// which Parse echoes back in its answer.
+  Map<String, Object?> _applyOps(
+      Map<String, Object?> target, Map<String, Object?> body) {
+    final echoed = <String, Object?>{};
+    for (final entry in body.entries) {
+      final value = entry.value;
+      if (value is Map && value['__op'] == 'Increment') {
+        final next =
+            ((target[entry.key] as num?) ?? 0) + (value['amount'] as num);
+        target[entry.key] = next;
+        echoed[entry.key] = next;
+      } else {
+        target[entry.key] = value;
+      }
+    }
+    return echoed;
   }
 
   /// Monotonic ISO timestamps keep cursor comparisons deterministic.
@@ -49,15 +81,14 @@ class FakeParseServer {
     final className = segments[1];
     final objectId = segments.length > 2 ? segments[2] : null;
     final store = classOf(className);
+    requests.add('${request.method} $className');
 
     switch (request.method) {
       case 'POST':
         final id = 'obj${++_counter}';
-        store[id] = {
-          ...jsonDecode(body) as Map<String, Object?>,
-          'objectId': id,
-          'updatedAt': _stamp(),
-        };
+        final row = <String, Object?>{};
+        _applyOps(row, jsonDecode(body) as Map<String, Object?>);
+        store[id] = {...row, 'objectId': id, 'updatedAt': _stamp()};
         request.response.write(jsonEncode({'objectId': id}));
       case 'PUT':
         if (!store.containsKey(objectId)) {
@@ -66,12 +97,12 @@ class FakeParseServer {
               jsonEncode({'code': 101, 'error': 'Object not found.'}));
           break;
         }
-        store[objectId!] = {
-          ...store[objectId]!,
-          ...jsonDecode(body) as Map<String, Object?>,
-          'updatedAt': _stamp(),
-        };
-        request.response.write(jsonEncode({'updatedAt': _stamp()}));
+        final row = store[objectId!]!;
+        final echoed =
+            _applyOps(row, jsonDecode(body) as Map<String, Object?>);
+        row['updatedAt'] = _stamp();
+        request.response
+            .write(jsonEncode({'updatedAt': row['updatedAt'], ...echoed}));
       case 'DELETE':
         if (store.remove(objectId) == null) {
           request.response.statusCode = 400;

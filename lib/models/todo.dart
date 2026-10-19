@@ -20,6 +20,7 @@ class Todo {
     this.priority = TodoPriority.normal,
     this.dueDate,
     this.completedAt,
+    this.reminderId,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.remoteId,
@@ -40,6 +41,12 @@ class Todo {
 
   /// When the item was ticked off, so finished work can be shown in order.
   DateTime? completedAt;
+
+  /// Id of the [Reminder] this item was turned into, null while it is only a
+  /// checklist line. The reminder keeps its own copy of the text; the link
+  /// exists so the list can show the alarm and offer to open it instead of
+  /// creating a second one.
+  String? reminderId;
 
   final DateTime createdAt;
 
@@ -94,6 +101,7 @@ class Todo {
         'priority': priority.name,
         'dueDate': dueDate?.toIso8601String(),
         'completedAt': completedAt?.toIso8601String(),
+        'reminderId': reminderId,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'remoteId': remoteId,
@@ -115,6 +123,7 @@ class Todo {
         completedAt: j['completedAt'] == null
             ? null
             : DateTime.tryParse(j['completedAt'] as String),
+        reminderId: j['reminderId'] as String?,
         createdAt: j['createdAt'] == null
             ? null
             : DateTime.tryParse(j['createdAt'] as String),
@@ -137,6 +146,7 @@ class Todo {
         'priority': priority.name,
         'dueDate': dueDate?.millisecondsSinceEpoch,
         'completedAt': completedAt?.millisecondsSinceEpoch,
+        'reminderId': reminderId,
         'todoCreatedAt': createdAt.millisecondsSinceEpoch,
         'todoUpdatedAt': updatedAt.millisecondsSinceEpoch,
       };
@@ -161,6 +171,7 @@ class Todo {
       ),
       dueDate: at('dueDate'),
       completedAt: at('completedAt'),
+      reminderId: json['reminderId'] as String?,
       createdAt: at('todoCreatedAt') ?? now,
       updatedAt: at('todoUpdatedAt') ?? now,
       remoteId: json['objectId'] as String?,

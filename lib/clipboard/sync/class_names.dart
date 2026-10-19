@@ -11,4 +11,8 @@ class SyncClassNames {
   /// The reminder side's lists, synced through `SyncCollection`.
   static const String todo = 'TodoItem';
   static const String note = 'NoteItem';
+
+  /// One object per space holding a change counter per class, so an idle
+  /// sync costs a single read instead of a query per class.
+  static const String meta = 'SyncMeta';
 }

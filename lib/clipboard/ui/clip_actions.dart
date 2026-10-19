@@ -37,7 +37,7 @@ Future<void> togglePinClip(BuildContext context, ClipItem item) async {
 /// Runs a sync cycle and reports the outcome — an icon alone is easy to miss.
 Future<void> runSync(BuildContext context) async {
   final store = context.read<ClipboardStore>();
-  final status = await store.syncNow();
+  final status = await store.syncNow(full: true);
   if (!context.mounted) return;
 
   final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();

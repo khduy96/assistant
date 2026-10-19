@@ -25,6 +25,10 @@ class TodoStore extends ChangeNotifier {
   /// The todo list as the sync engine sees it.
   late final SyncCollection syncCollection = _TodoSyncCollection(this);
 
+  /// Called after a change made here (not one a sync applied), so the sync
+  /// engine can push it soon instead of on its next timer.
+  VoidCallback? onLocalChange;
+
   /// Items still to do, most urgent first.
   List<Todo> get open => _todos.where((t) => !t.done).toList();
 
@@ -70,6 +74,15 @@ class TodoStore extends ChangeNotifier {
     todo.completedAt = done ? DateTime.now() : null;
     todo.touch();
     _sort();
+    await _persist();
+  }
+
+  /// Records which reminder this item was turned into, or clears the link
+  /// with a null [reminderId] once that reminder is gone.
+  Future<void> linkReminder(Todo todo, String? reminderId) async {
+    if (todo.reminderId == reminderId) return;
+    todo.reminderId = reminderId;
+    todo.touch();
     await _persist();
   }
 
@@ -119,9 +132,10 @@ class TodoStore extends ChangeNotifier {
     });
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist({bool fromSync = false}) async {
     await _storage.save(_todos, _deleted);
     notifyListeners();
+    if (!fromSync) onLocalChange?.call();
   }
 }
 
@@ -160,7 +174,7 @@ class _TodoSyncCollection implements SyncCollection {
   @override
   Future<void> clearPendingDelete(String localId) async {
     _store._deleted.removeWhere((t) => t.localId == localId);
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 
   @override
@@ -169,7 +183,7 @@ class _TodoSyncCollection implements SyncCollection {
     if (todo == null) return;
     todo.remoteId = remoteId;
     todo.dirty = false;
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 
   @override
@@ -191,13 +205,13 @@ class _TodoSyncCollection implements SyncCollection {
 
     _store._todos.add(incoming);
     _store._sort();
-    await _store._persist();
+    await _store._persist(fromSync: true);
     return true;
   }
 
   @override
   Future<void> removeLocalOnly(String localId) async {
     _store._todos.removeWhere((t) => t.id == localId);
-    await _store._persist();
+    await _store._persist(fromSync: true);
   }
 }

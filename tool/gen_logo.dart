@@ -1,7 +1,6 @@
-// Renders the "Nhắc việc" logo to every icon asset the app ships.
+// Renders the "Trợ lý" logo to every icon asset the app ships.
 // Run with: flutter test tool/gen_logo.dart
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -15,64 +14,74 @@ const blueDeep = Color(0xFF1E40AF);
 const amber = Color(0xFFF59E0B);
 const white = Color(0xFFFFFFFF);
 
-const center = Offset(512, 512);
-const ringRadius = 338.0;
-const ringWidth = 80.0;
-const arcSweepDeg = 200.0; // amber arc = time left before the reminder fires
+// The mark: a speech bubble ("hỏi trợ lý") holding an amber sparkle, with a
+// small blue sparkle in its top-right corner.
+const bubble = Rect.fromLTWH(180, 184, 664, 520);
+const bubbleRadius = Radius.circular(200);
+const sparkleCenter = Offset(512, 444);
+const sparkleRadius = 178.0;
+const miniSparkleCenter = Offset(700, 300);
+const miniSparkleRadius = 62.0;
+
+Paint platePaint() => Paint()
+  ..shader = Gradient.linear(
+    const Offset(0, 0),
+    const Offset(S, S),
+    const [blueLight, blueMid, blueDeep],
+    const [0.0, 0.45, 1.0],
+  );
 
 /// Background plate. [squircle] false gives a full-bleed square for maskable icons.
 void plate(Canvas c, {bool squircle = true}) {
-  final paint = Paint()
-    ..shader = Gradient.linear(
-      const Offset(0, 0),
-      const Offset(S, S),
-      const [blueLight, blueMid, blueDeep],
-      const [0.0, 0.45, 1.0],
-    );
-  final rect = Rect.fromLTWH(0, 0, S, S);
+  const rect = Rect.fromLTWH(0, 0, S, S);
   if (squircle) {
-    c.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(230)), paint);
+    c.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(230)), platePaint());
   } else {
-    c.drawRect(rect, paint);
+    c.drawRect(rect, platePaint());
   }
 }
 
-/// The mark itself: countdown ring plus clock hands.
-void mark(Canvas c) {
-  c.drawCircle(
-    center,
-    ringRadius,
-    Paint()
-      ..color = white.withValues(alpha: 0.32)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = ringWidth,
-  );
-  c.drawArc(
-    Rect.fromCircle(center: center, radius: ringRadius),
-    -math.pi / 2,
-    arcSweepDeg * math.pi / 180,
-    false,
-    Paint()
-      ..color = amber
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = ringWidth
-      ..strokeCap = StrokeCap.round,
-  );
-  hand(c, 120, 168, 48); // hour hand at 4
-  hand(c, 0, 230, 40); // minute hand at 12
-  c.drawCircle(center, 42, Paint()..color = white);
+/// Bubble body plus a tail curving out of its bottom-left, as one outline.
+Path bubblePath() => Path.combine(
+      PathOperation.union,
+      Path()..addRRect(RRect.fromRectAndRadius(bubble, bubbleRadius)),
+      Path()
+        ..moveTo(290, 640)
+        ..cubicTo(300, 740, 280, 800, 236, 842) // outer edge down to the tip
+        ..cubicTo(330, 836, 420, 790, 480, 700) // inner edge back up
+        ..close(),
+    );
+
+/// Four-point star: tips on the axes, sides pinched towards the centre.
+Path sparkle(Offset o, double r) {
+  final k = r * 0.22;
+  return Path()
+    ..moveTo(o.dx, o.dy - r)
+    ..quadraticBezierTo(o.dx + k, o.dy - k, o.dx + r, o.dy)
+    ..quadraticBezierTo(o.dx + k, o.dy + k, o.dx, o.dy + r)
+    ..quadraticBezierTo(o.dx - k, o.dy + k, o.dx - r, o.dy)
+    ..quadraticBezierTo(o.dx - k, o.dy - k, o.dx, o.dy - r)
+    ..close();
 }
 
-void hand(Canvas c, double deg, double len, double w) {
-  final a = deg * math.pi / 180;
-  c.drawLine(
-    center,
-    center + Offset(math.sin(a) * len, -math.cos(a) * len),
-    Paint()
-      ..color = white
-      ..strokeWidth = w
-      ..strokeCap = StrokeCap.round,
+void mark(Canvas c, {bool small = false}) {
+  final body = bubblePath();
+  if (!small) {
+    c.drawPath(
+      body.shift(const Offset(0, 18)),
+      Paint()
+        ..color = const Color(0x40101C3A)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28),
+    );
+  }
+  c.drawPath(body, Paint()..color = white);
+  c.drawPath(
+    sparkle(sparkleCenter, small ? 214 : sparkleRadius),
+    Paint()..color = amber,
   );
+  if (!small) {
+    c.drawPath(sparkle(miniSparkleCenter, miniSparkleRadius), Paint()..color = blueMid);
+  }
 }
 
 /// Standard app icon.
@@ -81,23 +90,11 @@ void logo(Canvas c) {
   mark(c);
 }
 
-/// Tiny sizes (16-24px): drop the faint track and thicken everything, or the
-/// mark turns into a smudge in the Windows tray.
+/// Tiny sizes (16-24px): no shadow, no mini sparkle and a bigger main one —
+/// fine detail is only a smudge in the Windows tray.
 void logoSmall(Canvas c) {
   plate(c);
-  c.drawArc(
-    Rect.fromCircle(center: center, radius: ringRadius + 10),
-    -math.pi / 2,
-    arcSweepDeg * math.pi / 180,
-    false,
-    Paint()
-      ..color = amber
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 84
-      ..strokeCap = StrokeCap.butt,
-  );
-  hand(c, 120, 138, 84);
-  hand(c, 0, 186, 74);
+  mark(c, small: true);
 }
 
 /// Android adaptive / PWA maskable: full bleed, mark shrunk into the 80% safe zone.
@@ -209,7 +206,8 @@ Future<void> writeSheet(String path) async {
   Draw pick(int s) => s <= 24 ? logoSmall : logo;
   const big = 360.0, pad = 32.0;
   final w = big + pad * 3 + const [16, 24, 32, 48].fold<double>(0, (a, s) => a + s * 8 + pad);
-  const h = big + pad * 2;
+  // Top row: tiny frames zoomed 8x (48px -> 384). Bottom row: actual sizes.
+  const h = pad + 48 * 8 + pad + 128 + pad;
   final rec = PictureRecorder();
   final c = Canvas(rec);
   c.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..color = const Color(0xFF334155));

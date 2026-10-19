@@ -95,14 +95,21 @@ class ClipRepository {
       ));
 
   /// Moving a clip back to temp restarts its 1-day countdown.
-  Future<ClipItem> unsave(ClipItem item) => _persist(item.copyWith(
-        isSaved: false,
-        isPinned: false,
-        clearGroup: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        dirty: true,
-      ));
+  ///
+  /// Temp clips stay on this device, so its server object goes; saving it
+  /// again pushes it as a new one.
+  Future<ClipItem> unsave(ClipItem item) async {
+    await queueRemoteDelete(item.remoteId, SyncClassNames.clip);
+    return _persist(item.copyWith(
+      isSaved: false,
+      isPinned: false,
+      clearGroup: true,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      clearRemoteId: true,
+      dirty: true,
+    ));
+  }
 
   /// Pinning a temp clip saves it automatically, as required by the spec.
   Future<ClipItem> setPinned(ClipItem item, bool pinned) => _persist(
@@ -147,8 +154,9 @@ class ClipRepository {
     await queueRemoteDelete(item.remoteId, SyncClassNames.clip);
   }
 
-  /// Undo for [delete]. The old object is gone from the server, so the clip
-  /// comes back without a remote id and is pushed again as a new one.
+  /// Undo for [delete]. The clip keeps its remote id: if the delete never went
+  /// out the next push updates that same object, and if it did the update
+  /// finds nothing and the push creates the clip again.
   Future<ClipItem> restore(ClipItem item) async {
     final db = await _db;
     final revived = ClipItem(
@@ -163,6 +171,7 @@ class ClipRepository {
       groupId: item.groupId,
       note: item.note,
       copyCount: item.copyCount,
+      remoteId: item.remoteId,
     );
     await db.insert('clips', revived.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
@@ -315,9 +324,12 @@ class ClipRepository {
 
   // ----------------------------------------------------------------- sync
 
+  /// Changed clips that travel: saved or pinned ones. Temp clips are captured
+  /// on every copy and expire after a day, so they never leave the device.
   Future<List<ClipItem>> dirtyClips() async {
     final db = await _db;
-    final rows = await db.query('clips', where: 'dirty = 1');
+    final rows = await db.query('clips',
+        where: 'dirty = 1 AND (is_saved = 1 OR is_pinned = 1)');
     return rows.map(ClipItem.fromMap).toList();
   }
 

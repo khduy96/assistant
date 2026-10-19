@@ -72,7 +72,9 @@ class _TodoEditorState extends State<_TodoEditor> {
       priority: _priority,
       dueDate: _due,
       completedAt: existing?.completedAt,
+      reminderId: existing?.reminderId,
       createdAt: existing?.createdAt,
+      remoteId: existing?.remoteId,
     ));
   }
 
