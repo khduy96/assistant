@@ -1,0 +1,30 @@
+[
+  {
+    "id": "a",
+    "title": "Họp giao ban",
+    "repeat": "daily",
+    "date": "2026-01-05T00:00:00.000",
+    "hour": 9,
+    "minute": 30
+  },
+  {
+    "id": "b",
+    "repeat": "hàng tháng",
+    "date": "2026-01-06T00:00:00.000",
+    "endHour": 21,
+    "createdAt": "không phải ngày"
+  },
+  {
+    "id": "c",
+    "title": "giá trị null",
+    "date": "2026-01-07T00:00:00.000",
+    "hour": null,
+    "minute": null,
+    "weekdays": null,
+    "endHour": null,
+    "endMinute": 45,
+    "snoozedUntil": null,
+    "firedUpTo": null,
+    "createdAt": null
+  }
+]

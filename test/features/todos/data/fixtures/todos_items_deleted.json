@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "id": "t1",
+      "title": "Họp nhóm",
+      "note": "phòng 3",
+      "done": true,
+      "priority": "low",
+      "dueDate": "2026-10-21T00:00:00.000",
+      "completedAt": "2026-10-20T17:45:30.500",
+      "reminderId": "rem-1",
+      "createdAt": "2026-10-01T08:00:00.000",
+      "updatedAt": "2026-10-20T17:45:30.500",
+      "remoteId": "obj-t1",
+      "dirty": false
+    },
+    {
+      "id": "t2",
+      "title": "chưa đẩy",
+      "note": "",
+      "done": false,
+      "priority": "normal",
+      "dueDate": null,
+      "completedAt": null,
+      "reminderId": null,
+      "createdAt": "2026-10-21T09:00:00.000",
+      "updatedAt": "2026-10-21T09:05:00.000",
+      "remoteId": null,
+      "dirty": true
+    }
+  ],
+  "deleted": [
+    {
+      "id": "gone-1",
+      "remoteId": "obj-gone-1"
+    }
+  ]
+}

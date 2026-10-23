@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "id": "n1",
+      "title": "Họp nhóm",
+      "body": "## Việc\n- **một**",
+      "pinned": true,
+      "markdown": true,
+      "color": "blue",
+      "createdAt": "2026-10-01T08:00:00.000",
+      "updatedAt": "2026-10-20T17:45:30.500",
+      "remoteId": "obj-n1",
+      "dirty": false
+    },
+    {
+      "id": "n2",
+      "title": "",
+      "body": "chưa đẩy",
+      "pinned": false,
+      "markdown": false,
+      "color": "none",
+      "createdAt": "2026-10-21T09:00:00.000",
+      "updatedAt": "2026-10-21T09:05:00.000",
+      "remoteId": null,
+      "dirty": true
+    }
+  ],
+  "deleted": [
+    {
+      "id": "gone-1",
+      "remoteId": "obj-gone-1"
+    }
+  ]
+}
