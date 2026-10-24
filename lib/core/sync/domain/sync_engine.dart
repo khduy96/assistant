@@ -9,8 +9,16 @@ abstract interface class SyncEngine {
   /// Runs one cycle: push local changes, then pull remote ones.
   ///
   /// [full] pulls every class even when the server says it has not changed.
+  /// [auto] marks a cycle no one asked for (a timer, the app coming back),
+  /// which keeps to this device's share of the request budget; a manual cycle
+  /// never does. [checkRemote] false only pushes, without asking the server
+  /// what changed.
   /// Never throws: a failure comes back as [SyncState.error].
-  Future<SyncStatus> sync({bool full = false});
+  Future<SyncStatus> sync({
+    bool full = false,
+    bool auto = false,
+    bool checkRemote = true,
+  });
 
   /// Whether anything here still waits to go out. Answered locally, without
   /// a request.

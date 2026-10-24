@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../../domain/clock.dart';
+import '../domain/entities/sync_budget.dart';
 import '../domain/entities/sync_settings.dart';
 import '../domain/entities/sync_status.dart';
 import '../domain/sync_channel.dart';
@@ -24,10 +26,11 @@ import 'parse_config.dart';
 /// Deleting removes the row here and the object there — there is no `deleted`
 /// column on the server. Other devices notice through [_reconcile].
 ///
-/// Requests are metered against the Back4App quota. Each push bumps a counter
-/// per class on one [SyncClassNames.meta] object, and a pull reads that object
-/// first: a channel whose counters have not moved is skipped, so an idle cycle
-/// costs one request instead of a query and a reconcile per class.
+/// Requests are metered against this device's share of the user's monthly
+/// request [budget]. Each push bumps a counter per class on one
+/// [SyncClassNames.meta] object, and a pull reads that object first: a
+/// channel whose counters have not moved is skipped, so an idle cycle costs
+/// one request instead of a query and a reconcile per class.
 ///
 /// The engine's own state lives in [SyncStateStore] under keys that devices
 /// already in use have on disk; they must not change.
@@ -37,6 +40,9 @@ class ParseSyncEngine implements SyncEngine {
     required this._state,
     required List<SyncChannel> channels,
     required this._clock,
+    this.budget = SyncBudget.configured,
+    this._httpClientFactory,
+    this.onePassMaxRows = 500,
   }) : assert(channels.where((c) => c.shared).length <= 1),
        _channels = List.unmodifiable(channels);
 
@@ -45,13 +51,31 @@ class ParseSyncEngine implements SyncEngine {
   final List<SyncChannel> _channels;
   final Clock _clock;
 
+  /// The monthly request budget. An automatic cycle stops once this device
+  /// has spent its share, and the budget level sets how often a full pull is
+  /// due (a safety net for a build that does not bump the counters, or a
+  /// bump that never landed).
+  final SyncBudget budget;
+
+  /// Makes the HTTP client of each cycle; null uses a plain one.
+  final http.Client Function()? _httpClientFactory;
+
+  /// A collection with fewer synced rows than this is pulled in one pass:
+  /// one query for the whole class, instead of a cursor query plus the list
+  /// of ids that shows what was deleted. 0 always takes the two queries.
+  final int onePassMaxRows;
+
   static const String metaClass = SyncClassNames.meta;
 
-  /// How often every class is pulled whatever the counters say. A safety net
-  /// for a build that does not bump them yet, or a bump that never landed.
-  static const Duration fullPullEvery = Duration(hours: 24);
+  /// Why an automatic cycle did not run, or stopped short.
+  static const String budgetSpentMessage =
+      'Máy này đã dùng hết ngân sách request tháng này; sync tự động tạm dừng '
+      'tới tháng sau';
 
   bool _running = false;
+
+  /// Requests sent by the running cycle, against what it may send.
+  _CycleMeter _cycle = _CycleMeter();
 
   /// Settings as of the start of the running cycle, kept current by [_put].
   Map<String, String> _settings = const {};
@@ -103,11 +127,24 @@ class ParseSyncEngine implements SyncEngine {
   /// [full] pulls every class even when its counter has not moved — what the
   /// "Đồng bộ ngay" button asks for.
   ///
+  /// [auto] keeps the cycle within this device's share of the [budget]: with
+  /// the share spent it sends nothing, and otherwise it stops right before
+  /// the request that would go past it. Either way it answers
+  /// [SyncState.paused]; whatever did not go out stays queued for the next
+  /// cycle. A manual cycle ([auto] false) always runs, and is counted too.
+  ///
+  /// [checkRemote] false only pushes and bumps the counters, without asking
+  /// the server what changed ([full] is then ignored).
+  ///
   /// Returns the resulting status; never throws — failures come back as
   /// [SyncState.error] so the UI can show them without crashing a background
   /// timer.
   @override
-  Future<SyncStatus> sync({bool full = false}) async {
+  Future<SyncStatus> sync({
+    bool full = false,
+    bool auto = false,
+    bool checkRemote = true,
+  }) async {
     if (!config.isConfigured) {
       return const SyncStatus(
         state: SyncState.notConfigured,
@@ -122,16 +159,29 @@ class ParseSyncEngine implements SyncEngine {
     }
 
     _running = true;
-    var requests = 0;
-    final client = ParseClient(config, onRequest: () => requests++);
+    _cycle = _CycleMeter();
+    ParseClient? client;
     SyncStatus status;
     try {
       _settings = {...await _state.readAll()};
+      final used = int.tryParse(_get(monthKey(_clock.now())) ?? '') ?? 0;
+      final level = budget.levelFor(used);
+      if (auto && level == SyncBudgetLevel.exhausted) {
+        throw const _BudgetSpent();
+      }
+      _cycle = _CycleMeter(auto ? budget.stopAt - used : null);
+      client = ParseClient(
+        config,
+        httpClient: _httpClientFactory?.call(),
+        onRequest: _cycle.take,
+      );
       _inflight = _decodeSet(_get(_inflightKey));
 
       final (pushed, touched) = await _push(client);
       await _bumpMeta(client, touched);
-      final pulled = await _pull(client, full: full);
+      final pulled = checkRemote
+          ? await _pull(client, full: full, level: level)
+          : 0;
       final now = _clock.now();
       await _put('sync_last_at', '${now.millisecondsSinceEpoch}');
       status = SyncStatus(
@@ -139,6 +189,11 @@ class ParseSyncEngine implements SyncEngine {
         lastSyncAt: now,
         pushed: pushed,
         pulled: pulled,
+      );
+    } on _BudgetSpent {
+      status = const SyncStatus(
+        state: SyncState.paused,
+        message: budgetSpentMessage,
       );
     } on ParseException catch (error) {
       status = SyncStatus(state: SyncState.error, message: error.message);
@@ -151,9 +206,9 @@ class ParseSyncEngine implements SyncEngine {
       status = SyncStatus(state: SyncState.error, message: '$error');
     } finally {
       _running = false;
-      client.close();
+      client?.close();
     }
-    return status.withMonthRequests(await _meter(requests));
+    return status.withMonthRequests(await _meter(_cycle.sent));
   }
 
   /// Whether anything here still waits to go out: edits, deletes, or a
@@ -172,7 +227,8 @@ class ParseSyncEngine implements SyncEngine {
   static String monthKey(DateTime time) =>
       'sync_req_${time.year}-${time.month.toString().padLeft(2, '0')}';
 
-  /// Requests counted so far this month on this device.
+  /// Requests counted so far this month on this device: every request sent,
+  /// failed or not, automatic or manual.
   @override
   Future<int> requestsThisMonth() async =>
       int.tryParse(await _state.read(monthKey(_clock.now())) ?? '') ?? 0;
@@ -202,27 +258,34 @@ class ParseSyncEngine implements SyncEngine {
     var count = 0;
     final touched = <String>{};
 
-    for (final collection in _collections) {
-      final className = collection.className;
-      for (final remoteId in await collection.pendingDeletes()) {
-        await client.delete(className, remoteId);
-        await collection.clearPendingDelete(remoteId);
-        touched.add(className);
-        count++;
+    try {
+      for (final collection in _collections) {
+        final className = collection.className;
+        for (final remoteId in await collection.pendingDeletes()) {
+          await client.delete(className, remoteId);
+          await collection.clearPendingDelete(remoteId);
+          touched.add(className);
+          count++;
+        }
+        for (final record in await collection.dirtyRecords()) {
+          final objectId = await _upsert(
+            client,
+            className,
+            localId: record.localId,
+            remoteId: record.remoteId,
+            data: {...record.fields, 'space': config.space},
+          );
+          await collection.markSynced(record.localId, objectId);
+          await _landed(className, record.localId);
+          touched.add(className);
+          count++;
+        }
       }
-      for (final record in await collection.dirtyRecords()) {
-        final objectId = await _upsert(
-          client,
-          className,
-          localId: record.localId,
-          remoteId: record.remoteId,
-          data: {...record.fields, 'space': config.space},
-        );
-        await collection.markSynced(record.localId, objectId);
-        await _landed(className, record.localId);
-        touched.add(className);
-        count++;
-      }
+    } on _BudgetSpent {
+      // What did go out still has to reach the other devices: the next
+      // cycle's bump announces it.
+      await _queueBump(touched);
+      rethrow;
     }
 
     return (count, touched);
@@ -264,6 +327,8 @@ class ParseSyncEngine implements SyncEngine {
         return existingId;
       }
     }
+    // A create the budget stops is never sent, so it must not be marked.
+    _cycle.check();
     await _setInflight(className, localId, on: true);
     return client.create(className, data);
   }
@@ -308,9 +373,8 @@ class ParseSyncEngine implements SyncEngine {
   /// The set is saved before the request, so a bump that fails is retried on
   /// the next cycle instead of leaving the other devices unaware.
   Future<void> _bumpMeta(ParseClient client, Set<String> touched) async {
-    final pending = {..._decodeSet(_get(_bumpKey)), ...touched};
+    final pending = await _queueBump(touched);
     if (pending.isEmpty) return;
-    await _put(_bumpKey, jsonEncode(pending.toList()));
 
     final metaId =
         _get(_metaIdKey) ?? (await _findMeta(client))?['objectId'] as String?;
@@ -338,6 +402,14 @@ class ParseSyncEngine implements SyncEngine {
       }
     }
     await _put(_bumpKey, '');
+  }
+
+  /// Adds [touched] to the classes still waiting for a bump, and returns
+  /// them all.
+  Future<Set<String>> _queueBump(Set<String> touched) async {
+    final pending = {..._decodeSet(_get(_bumpKey)), ...touched};
+    if (pending.isNotEmpty) await _put(_bumpKey, jsonEncode(pending.toList()));
+    return pending;
   }
 
   static Map<String, Object?> _increments(Set<String> classNames) => {
@@ -382,14 +454,20 @@ class ParseSyncEngine implements SyncEngine {
 
   // ------------------------------------------------------------------ pull
 
-  Future<int> _pull(ParseClient client, {required bool full}) async {
+  /// [level] is where this device stood against the budget when the cycle
+  /// started; it sets how old the last full pull may get.
+  Future<int> _pull(
+    ParseClient client, {
+    required bool full,
+    required SyncBudgetLevel level,
+  }) async {
     final now = _clock.now();
     final lastFull = int.tryParse(_get(_fullKey) ?? '');
     final fullDue =
         full ||
         lastFull == null ||
         now.difference(DateTime.fromMillisecondsSinceEpoch(lastFull)) >=
-            fullPullEvery;
+            budget.fullPullEvery(level);
 
     final meta = await _findMeta(client) ?? await _createMeta(client);
     final revs = {
@@ -424,6 +502,11 @@ class ParseSyncEngine implements SyncEngine {
   /// Every collection outside the shared channel keeps its own cursor: they
   /// were added after the clipboard one had already moved on, and a shared
   /// cursor would have hidden everything written before that.
+  ///
+  /// A collection with fewer than [onePassMaxRows] synced rows is fetched
+  /// whole instead, in one query: the rows past the cursor are the changes,
+  /// and the ids of all of them show what was deleted. That saves the
+  /// reconcile request, at the cost of downloading rows already here.
   Future<int> _pullChannel(ParseClient client, SyncChannel channel) async {
     final cursorKey = channel.shared
         ? _sharedCursorKey
@@ -437,22 +520,37 @@ class ParseSyncEngine implements SyncEngine {
         },
     };
 
-    final rows = [
-      for (final collection in channel.collections)
-        await client.queryAll(collection.className, where: where),
-    ];
+    final whole = <bool>[];
+    final rows = <List<Map<String, Object?>>>[];
+    for (final collection in channel.collections) {
+      final onePass = (await collection.syncedIds()).length < onePassMaxRows;
+      whole.add(onePass);
+      rows.add(
+        await client.queryAll(
+          collection.className,
+          where: onePass ? {'space': config.space} : where,
+        ),
+      );
+    }
 
     var applied = 0;
-    for (final collection in channel.collections) {
-      applied += await _reconcile(client, collection);
+    for (var i = 0; i < channel.collections.length; i++) {
+      applied += await _reconcile(
+        client,
+        channel.collections[i],
+        live: whole[i] ? rows[i] : null,
+      );
     }
 
     String? newestIso = since;
     for (var i = 0; i < channel.collections.length; i++) {
       final collection = channel.collections[i];
       for (final json in rows[i]) {
+        final updatedAt = json['updatedAt'] as String?;
+        // A whole class holds rows the cursor already covers.
+        if (whole[i] && !_isPast(updatedAt, since)) continue;
         if (await collection.applyRemote(json)) applied++;
-        newestIso = _newer(newestIso, json['updatedAt'] as String?);
+        newestIso = _newer(newestIso, updatedAt);
       }
     }
 
@@ -463,15 +561,22 @@ class ParseSyncEngine implements SyncEngine {
   /// Mirrors deletions made on other devices.
   ///
   /// Without tombstones a deleted object simply stops existing, and a cursor
-  /// query can never report it. So each pull also fetches the bare list of ids
-  /// in this space (`keys=localId`, no content) and drops any local row that
-  /// had been synced but is no longer there.
-  Future<int> _reconcile(ParseClient client, SyncCollection collection) async {
-    final remote = await client.queryAll(
-      collection.className,
-      where: {'space': config.space},
-      keys: const ['localId'],
-    );
+  /// query can never report it. So each pull also looks at the list of ids in
+  /// this space and drops any local row that had been synced but is no longer
+  /// there. [live] is that list when the whole class was just fetched;
+  /// otherwise the bare ids are fetched here (`keys=localId`, no content).
+  Future<int> _reconcile(
+    ParseClient client,
+    SyncCollection collection, {
+    List<Map<String, Object?>>? live,
+  }) async {
+    final remote =
+        live ??
+        await client.queryAll(
+          collection.className,
+          where: {'space': config.space},
+          keys: const ['localId'],
+        );
     final liveIds = {
       for (final row in remote)
         if (row['localId'] is String) row['localId'] as String,
@@ -511,5 +616,38 @@ class ParseSyncEngine implements SyncEngine {
     if (candidate == null) return current;
     if (current == null) return candidate;
     return candidate.compareTo(current) > 0 ? candidate : current;
+  }
+
+  /// Whether a row stamped [updatedAt] is one a cursor query from [since]
+  /// would have returned.
+  static bool _isPast(String? updatedAt, String? since) {
+    if (since == null) return true;
+    return updatedAt != null && updatedAt.compareTo(since) > 0;
+  }
+}
+
+/// Thrown right before a request an automatic cycle may no longer send.
+class _BudgetSpent implements Exception {
+  const _BudgetSpent();
+}
+
+/// Requests one cycle has sent, against the most it may send.
+class _CycleMeter {
+  _CycleMeter([this.cap]);
+
+  /// Null for a cycle without a limit.
+  final int? cap;
+  int sent = 0;
+
+  /// Throws [_BudgetSpent] once the cycle has no request left.
+  void check() {
+    final limit = cap;
+    if (limit != null && sent >= limit) throw const _BudgetSpent();
+  }
+
+  /// Counts a request about to go out, or stops it with [_BudgetSpent].
+  void take() {
+    check();
+    sent++;
   }
 }

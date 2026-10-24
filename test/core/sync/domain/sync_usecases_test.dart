@@ -34,6 +34,29 @@ void main() {
       expect(engine.fullRequests, [true]);
     });
 
+    test('mặc định là chu kỳ bấm tay, có kiểm server', () async {
+      await RunSync(engine)(const RunSyncParams());
+      expect(engine.syncCalls, [(full: false, auto: false, checkRemote: true)]);
+    });
+
+    test('auto và checkRemote được chuyển nguyên xuống engine', () async {
+      await RunSync(engine)(
+        const RunSyncParams(auto: true, checkRemote: false),
+      );
+      await RunSync(engine)(const RunSyncParams(full: true, auto: true));
+      expect(engine.syncCalls, [
+        (full: false, auto: true, checkRemote: false),
+        (full: true, auto: true, checkRemote: true),
+      ]);
+      expect(engine.fullRequests, [false, true]);
+    });
+
+    test('trạng thái paused của engine được trả nguyên', () async {
+      engine.status = const SyncStatus(state: SyncState.paused, message: 'x');
+      final result = await RunSync(engine)(const RunSyncParams(auto: true));
+      expect(result.valueOrNull?.state, SyncState.paused);
+    });
+
     test('chu kỳ lỗi vẫn là Ok, lỗi nằm trong trạng thái', () async {
       engine.status = const SyncStatus(
         state: SyncState.error,

@@ -5,6 +5,7 @@ import 'package:event_notice/core/sync/domain/entities/sync_settings.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_status.dart';
 import 'package:event_notice/core/sync/domain/sync_collection.dart';
 import 'package:event_notice/core/sync/domain/sync_engine.dart';
+import 'package:event_notice/core/sync/domain/sync_state_store.dart';
 
 /// A clock that stays at [current] until a test moves it.
 class FixedClock implements Clock {
@@ -54,6 +55,16 @@ class MemorySyncCollection implements SyncCollection {
         ..fields = {...row.fields, ...fields}
         ..dirty = true;
     }
+    _localChanges.add(null);
+  }
+
+  /// Deletes a row as the user would: a row already on the server leaves its
+  /// `objectId` in [tombstones].
+  void delete(String localId) {
+    final row = rows.remove(localId);
+    if (row == null) return;
+    final remoteId = row.remoteId;
+    if (remoteId != null) tombstones.add(remoteId);
     _localChanges.add(null);
   }
 
@@ -110,6 +121,20 @@ class MemorySyncCollection implements SyncCollection {
   Future<void> removeLocalOnly(String localId) async => rows.remove(localId);
 }
 
+/// A [SyncStateStore] kept in a map.
+class MemorySyncStateStore implements SyncStateStore {
+  final Map<String, String> values = {};
+
+  @override
+  Future<Map<String, String>> readAll() async => {...values};
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+}
+
 /// A [SyncEngine] whose answers the test sets.
 class FakeSyncEngine implements SyncEngine {
   SyncStatus status = const SyncStatus(state: SyncState.ok);
@@ -117,6 +142,9 @@ class FakeSyncEngine implements SyncEngine {
   int monthRequests = 0;
   Object? error;
   final List<bool> fullRequests = [];
+
+  /// The arguments of every [sync] call, in order.
+  final List<({bool full, bool auto, bool checkRemote})> syncCalls = [];
   final StreamController<void> changes = StreamController<void>.broadcast();
 
   @override
@@ -132,9 +160,14 @@ class FakeSyncEngine implements SyncEngine {
   }
 
   @override
-  Future<SyncStatus> sync({bool full = false}) async {
+  Future<SyncStatus> sync({
+    bool full = false,
+    bool auto = false,
+    bool checkRemote = true,
+  }) async {
     _maybeThrow();
     fullRequests.add(full);
+    syncCalls.add((full: full, auto: auto, checkRemote: checkRemote));
     return status;
   }
 

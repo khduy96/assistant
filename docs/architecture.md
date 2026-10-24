@@ -354,14 +354,42 @@ fake vào.
      Mọi key giữ nguyên văn (danh sách ở [mục 8.3](#83-key-trong-bảng-settings)).
 3. Sau bước 2, `ParseSyncEngine` chỉ còn biết `List<SyncCollection>`. Các nhánh
    `_pullClipboard`, `_applyClip` và `_applyGroup` sẽ bị xoá.
-4. Tách timer (đẩy sau 30 giây, pull khi focus nếu đã quá 10 phút, timer 2 giờ),
-   trạng thái sync và nút "Đồng bộ ngay" ra khỏi `ClipboardStore`, đưa vào
-   `core/sync/presentation/sync_controller.dart`. Callback `onLocalChange` của
-   các store được thay bằng việc controller lắng nghe `changes` của các repository.
-5. Giữ nguyên hành vi đã ghi trong `docs/sync-server-triggers.md` (bộ đếm
-   `SyncMeta`, full pull mỗi 24 giờ). Toàn bộ test trong `test/clipboard/sync*_test.dart`
-   và `task_sync_test.dart` phải chạy được với engine mới mà không sửa assertion,
-   chỉ sửa phần dựng object.
+4. Tách timer, trạng thái sync và nút "Đồng bộ ngay" ra khỏi `ClipboardStore`,
+   đưa vào `core/sync/presentation/sync_controller.dart`. Callback
+   `onLocalChange` của các store được thay bằng việc controller lắng nghe
+   `changes` của các repository.
+5. Giữ nguyên giao thức đã ghi trong `docs/sync-server-triggers.md` (bộ đếm
+   `SyncMeta`, full pull định kỳ). Toàn bộ test sync có sẵn (nay ở
+   `test/core/sync/` và `test/features/clipboard/data/sync/`) phải chạy được với
+   engine mới mà không sửa assertion, chỉ sửa phần dựng object.
+
+**Lịch và ngân sách request (nhánh `feat/sync-budget`).** Lịch sync không còn
+là các mốc cố định (30 giây, 10 phút, 2 giờ, 24 giờ) mà suy ra từ một
+**ngân sách request/tháng do người dùng đặt**, không phải hạn mức của Back4App.
+Chi tiết, kèm bảng ước tính chi phí, ở `docs/sync-server-triggers.md`.
+
+- Ngân sách khai báo ở `lib/core/sync/domain/entities/sync_budget.dart`:
+  `userMonthlyRequestBudget = 10000` cho cả space và `expectedSyncDevices = 3`.
+  Muốn đổi thì sửa hai hằng số này; mọi ngưỡng và khoảng thời gian tự tính lại.
+- Mỗi máy giữ phần của mình: 10.000 / 3 = 3.333 request/tháng, đếm trong
+  `sync_req_YYYY-MM`. Cảnh báo ở 70% (2.333), dừng ở 100% (3.333).
+- Mức bình thường: đẩy sau 30 giây kể từ lần sửa cuối; focus/resume kéo nếu
+  lượt kiểm server gần nhất đã cách ít nhất R = 14 phút; pull đầy đủ khi lần
+  trước đã cũ hơn 21 giờ; timer dự phòng 2 giờ, chỉ chạy khi còn thay đổi chưa
+  đẩy.
+- Mức cảnh báo: mọi khoảng trên dài gấp 4, tooltip báo sắp hết ngân sách.
+- Đã hết: không chạy chu kỳ tự động nào (đẩy lẫn kéo) tới tháng sau; thay đổi
+  local nằm chờ. Nút đồng bộ hiện icon `sync_disabled_rounded` và lý do trong
+  tooltip; "Đồng bộ ngay" vẫn chạy và vẫn được đếm. `ParseSyncEngine` chặn chu
+  kỳ tự động ngay trước request vượt phần của máy.
+- Khi đã đọc được số đếm, tooltip hiện `x / 3333 request tháng này (máy này)`
+  (`lib/core/sync/presentation/sync_status_text.dart`).
+- Hai cách giảm request trong `lib/core/sync/data/parse_sync_engine.dart`:
+  **kéo một lượt** (class dưới 500 bản ghi đã đồng bộ được tải cả class trong
+  một query, bỏ request đối chiếu xoá) và **chu kỳ chỉ-đẩy** (thay đổi local đẩy
+  lên mà không hỏi server, khi lượt kiểm gần nhất chưa cách quá R).
+- Phương án chuyển bộ đếm sang trigger Cloud Code đã loại, vì mỗi lần ghi có
+  `afterSave` bị Back4App tính ít nhất 2 request.
 
 ---
 
@@ -537,6 +565,10 @@ inflight.
 | `sync_inflight` | JSON list `<Class>/<localId>` đã gửi nhưng chưa xác nhận | 301-302, 313 |
 | `sync_last_at` | millis lúc chu kỳ sync gần nhất xong | 129 |
 | `sync_req_YYYY-MM` | số request đã dùng trong tháng | 166-167 |
+
+Ngân sách request/tháng (nhánh `feat/sync-budget`, xem [mục 4](#4-sync-engine))
+không thêm, bớt hay đổi key nào ở bảng trên: mức ngân sách tính từ
+`sync_req_YYYY-MM`, còn ngân sách và số máy là hằng số trong code.
 
 ### 8.4 Cầu nối todo ↔ nhắc nhở
 

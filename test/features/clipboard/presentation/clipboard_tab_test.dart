@@ -1,4 +1,6 @@
+import 'package:event_notice/core/sync/domain/entities/sync_budget.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_settings.dart';
+import 'package:event_notice/core/sync/domain/entities/sync_status.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_month_requests.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_sync_settings.dart';
 import 'package:event_notice/core/sync/domain/usecases/has_pending_changes.dart';
@@ -414,7 +416,9 @@ void main() {
     await pumpTab(tester, clips: [clip('a')], sync: sync);
 
     expect(
-      find.byTooltip('Đồng bộ ngay (nha)\n12 request tháng này (máy này)'),
+      find.byTooltip(
+        'Đồng bộ ngay (nha)\n12 / 3333 request tháng này (máy này)',
+      ),
       findsOneWidget,
     );
     expect(find.byTooltip('Đang ghi clipboard — chạm để dừng'), findsOneWidget);
@@ -443,5 +447,111 @@ void main() {
     );
     expect(clear.onPressed, isNull);
     await finish(tester);
+  });
+
+  group('nút đồng bộ theo ngân sách request tháng này', () {
+    const budget = SyncBudget.configured;
+    final share = budget.deviceShare;
+
+    SyncController syncOn(FakeSyncEngine engine) => SyncController(
+      runSync: RunSync(engine),
+      hasPendingChanges: HasPendingChanges(engine),
+      getMonthRequests: GetMonthRequests(engine),
+      watchLocalChanges: WatchLocalChanges(engine),
+      getSyncSettings: GetSyncSettings(engine),
+      clock: clock,
+    );
+
+    IconButton syncButton(WidgetTester tester, IconData icon) =>
+        tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon));
+
+    testWidgets('từ mức cảnh báo thì báo sắp hết, icon như thường', (
+      tester,
+    ) async {
+      final engine = FakeSyncEngine()
+        ..settings = const SyncSettings(
+          isConfigured: true,
+          autoSync: false,
+          space: 'nha',
+        )
+        ..monthRequests = budget.warnAt;
+      final sync = syncOn(engine);
+      addTearDown(sync.dispose);
+      await sync.start();
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+      expect(
+        find.byTooltip(
+          'Đồng bộ ngay (nha)\n${budget.warnAt} / $share request tháng này '
+          '(máy này)\nSắp hết ngân sách request tháng này nên sync tự động '
+          'thưa hơn',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        syncButton(tester, Icons.cloud_sync_outlined).onPressed,
+        isNotNull,
+      );
+      await finish(tester);
+    });
+
+    testWidgets('hết ngân sách thì sync tự động dừng, icon riêng không đỏ, '
+        'vẫn bấm để đồng bộ tay được', (tester) async {
+      final engine = FakeSyncEngine()
+        ..settings = const SyncSettings(
+          isConfigured: true,
+          autoSync: true,
+          space: 'nha',
+        )
+        ..monthRequests = budget.stopAt
+        // The manual cycle is counted too.
+        ..status = SyncStatus(
+          state: SyncState.ok,
+          monthRequests: budget.stopAt + 1,
+        );
+      final sync = syncOn(engine);
+      await sync.start();
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+      const spentNote =
+          '\nĐã hết ngân sách request tháng này của máy này — sync tự động '
+          'tạm dừng tới tháng sau, vẫn bấm để đồng bộ tay được';
+      expect(engine.syncCalls, isEmpty);
+      expect(sync.status.state, SyncState.paused);
+      expect(
+        find.byTooltip(
+          'Đồng bộ ngay (nha)\n${budget.stopAt} / $share request tháng này '
+          '(máy này)$spentNote',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
+      final icon = tester.widget<Icon>(
+        find.byIcon(Icons.sync_disabled_rounded),
+      );
+      expect(icon.color, isNull);
+      expect(
+        syncButton(tester, Icons.sync_disabled_rounded).onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.byIcon(Icons.sync_disabled_rounded));
+      await tester.pump();
+      expect(engine.syncCalls, [(full: true, auto: false, checkRemote: true)]);
+      expect(find.text('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(
+        find.byTooltip(
+          'Đồng bộ ngay\n${budget.stopAt + 1} / $share request tháng này '
+          '(máy này)$spentNote',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.sync_disabled_rounded), findsOneWidget);
+
+      await finish(tester);
+      // Stops the fallback timer that watches for the month to change.
+      sync.dispose();
+    });
   });
 }

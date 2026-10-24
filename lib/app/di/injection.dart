@@ -8,6 +8,7 @@ import '../../core/domain/clock.dart';
 import '../../core/domain/id_generator.dart';
 import '../../core/sync/data/parse_config.dart';
 import '../../core/sync/data/parse_sync_engine.dart';
+import '../../core/sync/domain/entities/sync_budget.dart';
 import '../../core/sync/domain/entities/sync_settings.dart';
 import '../../core/sync/domain/sync_channel.dart';
 import '../../core/sync/domain/sync_engine.dart';
@@ -73,11 +74,15 @@ void _registerSync(GetIt sl) {
     ..registerLazySingleton<SyncStateStore>(
       () => SqliteSyncStateStore(AppDatabase.instance),
     )
+    // The user's monthly request budget: the engine caps automatic cycles
+    // with it and the controller paces them by it.
+    ..registerLazySingleton<SyncBudget>(() => SyncBudget.configured)
     ..registerLazySingleton<SyncEngine>(
       () => ParseSyncEngine(
         config: sl(),
         state: sl(),
         clock: sl(),
+        budget: sl(),
         channels: [
           SyncChannel.shared([
             sl<ClipGroupSyncCollection>(),
@@ -105,6 +110,7 @@ void _registerSync(GetIt sl) {
         watchLocalChanges: sl(),
         getSyncSettings: sl(),
         clock: sl(),
+        budget: sl(),
       ),
     );
 }

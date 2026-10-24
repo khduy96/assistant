@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/presentation/format.dart';
+import '../../../../core/sync/domain/entities/sync_budget.dart';
 import '../../../../core/sync/domain/entities/sync_settings.dart';
 import '../../../../core/sync/domain/entities/sync_status.dart';
 import '../../../../core/sync/presentation/sync_controller.dart';
+import '../../../../core/sync/presentation/sync_status_text.dart';
 import '../../domain/entities/clip_item.dart';
 import '../clip_actions.dart';
 import '../clip_labels.dart';
@@ -237,7 +238,8 @@ class _CaptureButton extends StatelessWidget {
   }
 }
 
-/// Sync state at a glance: spins while running, turns red on the last error.
+/// Sync state at a glance: spins while running, turns red on the last error,
+/// shows a pause once this device has spent its share of the budget.
 class _SyncButton extends StatelessWidget {
   const _SyncButton();
 
@@ -262,25 +264,25 @@ class _SyncButton extends StatelessWidget {
     // once every list has loaded, and the button is live before that.
     final configured = context.read<SyncSettings>().isConfigured;
     final failed = status.state == SyncState.error;
-    // Back4App meters requests per month; this device's share of it.
-    final spent = status.monthRequests == null
-        ? ''
-        : '\n${status.monthRequests} request tháng này (máy này)';
+    final level = sync.budgetLevel;
+    // Automatic sync waits for next month; a tap still syncs, so no red.
+    final spent =
+        status.state == SyncState.paused || level == SyncBudgetLevel.exhausted;
     return IconButton(
-      tooltip: switch (status.state) {
-        SyncState.notConfigured =>
-          'Chưa cấu hình — build với --dart-define-from-file=.env để bật đồng bộ',
-        SyncState.error => 'Đồng bộ lỗi: ${status.message}$spent',
-        SyncState.ok =>
-          status.lastSyncAt == null
-              ? 'Đồng bộ ngay$spent'
-              : 'Đồng bộ lần cuối ${formatRelative(status.lastSyncAt!)}'
-                    ' · đẩy ${status.pushed}, nhận ${status.pulled}$spent',
-        _ => 'Đồng bộ ngay (${sync.settings.space})$spent',
-      },
+      tooltip: syncTooltip(
+        status: status,
+        settings: sync.settings,
+        budget: sync.budget,
+        level: level,
+        now: DateTime.now(),
+      ),
       icon: Icon(
         configured
-            ? (failed ? Icons.cloud_off_rounded : Icons.cloud_sync_outlined)
+            ? (failed
+                  ? Icons.cloud_off_rounded
+                  : spent
+                  ? Icons.sync_disabled_rounded
+                  : Icons.cloud_sync_outlined)
             : Icons.cloud_off_rounded,
         color: failed ? scheme.error : null,
       ),

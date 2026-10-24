@@ -1,4 +1,7 @@
-enum SyncState { idle, running, ok, error, notConfigured }
+/// Where sync stands. [paused] means automatic cycles are held back, e.g.
+/// because this device has spent its share of the monthly request budget; a
+/// manual sync still runs.
+enum SyncState { idle, running, ok, error, notConfigured, paused }
 
 /// Outcome of a sync cycle, or where the sync stands between cycles.
 class SyncStatus {
