@@ -588,6 +588,23 @@ không thêm, bớt hay đổi key nào ở bảng trên: mức ngân sách tín
     `ReminderStore` và `showReminderEditor` cũ (đổi `TimeOfDay` core ↔ Flutter).
     Giai đoạn 6 chỉ đổi adapter sang feature reminders mới.
   - Không file nào trong `lib/features/todos` import bất cứ thứ gì của reminders.
+  - Chiều ngược lại (hành động "Đã thực hiện" trên thẻ deadline): `reminders/domain`
+    có port `LinkedTodos` (`openTitlesFor`, `completeFor`) ở
+    `lib/features/reminders/domain/ports/linked_todos.dart` và use case
+    `FindOpenLinkedTodos`, `CompleteLinkedTodos`. Adapter `LinkedTodosBridge` ở
+    `lib/app/di/bridges/` dùng use case `FindOpenTodosLinkedTo` và
+    `CompleteTodosLinkedTo` của todos (gọi `SetTodoDone`), không dùng
+    `TodosController` vì nó là factory. `RemindersController.markDone` tick todo
+    trước, gỡ deadline sau (qua `remove`, trả `false` khi không lưu được lần
+    xoá) và trả `MarkDoneResult`: tick lỗi thì deadline được giữ và trả
+    `todosNotTicked`; tick xong mà xoá lỗi thì trả `deadlineNotRemoved`, để tab
+    Deadline báo riêng từng trường hợp. Khi tick lỗi, `CompleteTodosLinkedTo`
+    đặt todo vừa lỗi về như cũ, vì `TodoRepositoryImpl` giữ lần lưu lỗi trong
+    bộ nhớ (để lần ghi thành công sau mang xuống file); nhờ vậy làm lại sẽ tick
+    tiếp chứ không gỡ deadline khi file vẫn ghi todo đang mở. Bản đặt lại được
+    đóng `updatedAt` theo `Clock` lúc đó, để nó mới hơn mọi bản trên server và
+    sync (bản sửa sau cùng thắng) đưa các máy về cùng một bản. Todo giữ nguyên
+    `reminderId`, và không file nào trong `lib/features/reminders` import todos.
 
 ### 8.5 Thời gian, id và `TimeOfDay`
 

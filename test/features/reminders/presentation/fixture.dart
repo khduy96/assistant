@@ -2,12 +2,15 @@ import 'package:event_notice/core/domain/clock.dart';
 import 'package:event_notice/core/domain/id_generator.dart';
 import 'package:event_notice/core/domain/time_of_day.dart';
 import 'package:event_notice/features/reminders/domain/entities/reminder.dart';
+import 'package:event_notice/features/reminders/domain/ports/linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/usecases/alert_from_payload.dart';
 import 'package:event_notice/features/reminders/domain/usecases/build_alarm_schedule.dart';
 import 'package:event_notice/features/reminders/domain/usecases/can_draw_overlays.dart';
 import 'package:event_notice/features/reminders/domain/usecases/can_schedule_exact_alarms.dart';
+import 'package:event_notice/features/reminders/domain/usecases/complete_linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/usecases/delete_reminder.dart';
 import 'package:event_notice/features/reminders/domain/usecases/dismiss_alert.dart';
+import 'package:event_notice/features/reminders/domain/usecases/find_open_linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/usecases/get_due_alerts.dart';
 import 'package:event_notice/features/reminders/domain/usecases/get_launch_payload.dart';
 import 'package:event_notice/features/reminders/domain/usecases/get_reminders.dart';
@@ -72,15 +75,19 @@ Reminder reminder(
 
 /// A controller wired to [repo], [scheduler] and [ringer] through the real
 /// use cases, with the time taken from [clock]. It rings natively when
-/// [scheduler] does; the OS alarm bodies come from the real formatter.
+/// [scheduler] does; the OS alarm bodies come from the real formatter. The
+/// todo list it ticks off is [linkedTodos], an empty [FakeLinkedTodos] when
+/// left out.
 RemindersController controllerFor(
   InMemoryReminderRepository repo, {
   required Clock clock,
   required FakeAlarmScheduler scheduler,
   FakeAlarmRinger? ringer,
   IdGenerator? ids,
+  LinkedTodos? linkedTodos,
 }) {
   final sound = ringer ?? FakeAlarmRinger();
+  final todos = linkedTodos ?? FakeLinkedTodos();
   return RemindersController(
     getReminders: GetReminders(repo, clock),
     watchReminders: WatchReminders(repo),
@@ -88,6 +95,8 @@ RemindersController controllerFor(
     saveReminder: SaveReminder(repo, clock),
     deleteReminder: DeleteReminder(repo),
     setReminderEnabled: SetReminderEnabled(repo, clock),
+    findOpenLinkedTodos: FindOpenLinkedTodos(todos),
+    completeLinkedTodos: CompleteLinkedTodos(todos),
     getDueAlerts: GetDueAlerts(repo, clock),
     snoozeAlert: SnoozeAlert(repo, clock),
     dismissAlert: DismissAlert(repo),

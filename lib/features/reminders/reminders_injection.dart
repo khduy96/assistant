@@ -15,8 +15,10 @@ import 'domain/usecases/alert_from_payload.dart';
 import 'domain/usecases/build_alarm_schedule.dart';
 import 'domain/usecases/can_draw_overlays.dart';
 import 'domain/usecases/can_schedule_exact_alarms.dart';
+import 'domain/usecases/complete_linked_todos.dart';
 import 'domain/usecases/delete_reminder.dart';
 import 'domain/usecases/dismiss_alert.dart';
+import 'domain/usecases/find_open_linked_todos.dart';
 import 'domain/usecases/get_due_alerts.dart';
 import 'domain/usecases/get_launch_payload.dart';
 import 'domain/usecases/get_reminders.dart';
@@ -37,7 +39,8 @@ import 'presentation/reminder_alarm_body_formatter.dart';
 import 'presentation/reminders_controller.dart';
 
 /// Registers the reminders feature in [sl]. Expects a `Clock` and an
-/// `IdGenerator` to be registered already.
+/// `IdGenerator` to be registered already, and a `LinkedTodos` before the
+/// controller is first resolved: the app wires it to the todo list.
 ///
 /// Android hands the schedule to the OS alarm clock ([AndroidAlarmScheduler]);
 /// everywhere else the controller's own ticker rings, so the OS side is a
@@ -70,6 +73,8 @@ void registerReminders(GetIt sl) {
     ..registerLazySingleton(() => SaveReminder(sl(), sl()))
     ..registerLazySingleton(() => DeleteReminder(sl()))
     ..registerLazySingleton(() => SetReminderEnabled(sl(), sl()))
+    ..registerLazySingleton(() => FindOpenLinkedTodos(sl()))
+    ..registerLazySingleton(() => CompleteLinkedTodos(sl()))
     ..registerLazySingleton(() => GetDueAlerts(sl(), sl()))
     ..registerLazySingleton(() => SnoozeAlert(sl(), sl()))
     ..registerLazySingleton(() => DismissAlert(sl()))
@@ -94,6 +99,8 @@ void registerReminders(GetIt sl) {
         saveReminder: sl(),
         deleteReminder: sl(),
         setReminderEnabled: sl(),
+        findOpenLinkedTodos: sl(),
+        completeLinkedTodos: sl(),
         getDueAlerts: sl(),
         snoozeAlert: sl(),
         dismissAlert: sl(),

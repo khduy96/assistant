@@ -9,6 +9,7 @@ import 'package:event_notice/features/reminders/domain/entities/scheduled_alarm.
 import 'package:event_notice/features/reminders/domain/ports/alarm_body_formatter.dart';
 import 'package:event_notice/features/reminders/domain/ports/alarm_ringer.dart';
 import 'package:event_notice/features/reminders/domain/ports/alarm_scheduler.dart';
+import 'package:event_notice/features/reminders/domain/ports/linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/repositories/reminder_repository.dart';
 
 /// A clock that stays at [current] until a test moves it.
@@ -187,5 +188,38 @@ class FakeAlarmBodyFormatter implements AlarmBodyFormatter {
     final hh = eventAt.hour.toString().padLeft(2, '0');
     final mm = eventAt.minute.toString().padLeft(2, '0');
     return '${isLead ? 'lead ' : ''}${reminder.id}@$hh:$mm';
+  }
+}
+
+/// Keeps the titles of the open todo items per reminder id, and records every
+/// [completeFor] call in [completed], failed ones included. Set [failure] to
+/// make every call return it. A successful [completeFor] drops the titles of
+/// that id, as the items are no longer open.
+class FakeLinkedTodos implements LinkedTodos {
+  FakeLinkedTodos([Map<String, List<String>> open = const {}])
+    : open = {
+        for (final e in open.entries) e.key: [...e.value],
+      };
+
+  /// Titles of the open items, by the reminder id they point at.
+  final Map<String, List<String>> open;
+
+  /// The reminder ids [completeFor] was called with, in order.
+  final List<String> completed = [];
+
+  Failure? failure;
+
+  @override
+  Future<Result<List<String>>> openTitlesFor(String reminderId) async {
+    if (failure case final f?) return Err(f);
+    return Ok([...?open[reminderId]]);
+  }
+
+  @override
+  Future<Result<void>> completeFor(String reminderId) async {
+    completed.add(reminderId);
+    if (failure case final f?) return Err(f);
+    open.remove(reminderId);
+    return const Ok(null);
   }
 }

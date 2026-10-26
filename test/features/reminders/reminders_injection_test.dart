@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:event_notice/app/di/bridges/linked_reminder_bridge.dart';
+import 'package:event_notice/app/di/bridges/linked_todos_bridge.dart';
 import 'package:event_notice/app/di/bridges/todo_reminder_editor_bridge.dart';
 import 'package:event_notice/app/di/injection.dart';
 import 'package:event_notice/core/domain/clock.dart';
@@ -16,7 +17,10 @@ import 'package:event_notice/features/reminders/data/repositories/reminder_repos
 import 'package:event_notice/features/reminders/domain/ports/alarm_body_formatter.dart';
 import 'package:event_notice/features/reminders/domain/ports/alarm_ringer.dart';
 import 'package:event_notice/features/reminders/domain/ports/alarm_scheduler.dart';
+import 'package:event_notice/features/reminders/domain/ports/linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/repositories/reminder_repository.dart';
+import 'package:event_notice/features/reminders/domain/usecases/complete_linked_todos.dart';
+import 'package:event_notice/features/reminders/domain/usecases/find_open_linked_todos.dart';
 import 'package:event_notice/features/reminders/domain/usecases/get_due_alerts.dart';
 import 'package:event_notice/features/reminders/domain/usecases/save_reminder.dart';
 import 'package:event_notice/features/reminders/presentation/reminder_alarm_body_formatter.dart';
@@ -51,6 +55,8 @@ void main() {
       expect(sl<AlarmRinger>(), isA<AlarmSoundRinger>());
       expect(sl<LinkedReminderRepository>(), isA<LinkedReminderBridge>());
       expect(sl<TodoReminderEditor>(), isA<TodoReminderEditorBridge>());
+      expect(sl<LinkedTodos>(), isA<LinkedTodosBridge>());
+      expect(sl<LinkedTodos>(), same(sl<LinkedTodos>()));
     });
 
     test('chỉ Android giao lịch cho hệ điều hành; nơi khác app tự kêu', () {
@@ -70,19 +76,24 @@ void main() {
     late FakeClock clock;
     late FakeAlarmScheduler scheduler;
     late FakeAlarmRinger ringer;
+    late FakeLinkedTodos todos;
     late String path;
 
     setUp(() async {
       clock = FakeClock(t0);
       scheduler = FakeAlarmScheduler(ringsNatively: false);
       ringer = FakeAlarmRinger();
+      todos = FakeLinkedTodos();
       final dir = await Directory.systemTemp.createTemp('reminders_injection');
       addTearDown(() => dir.delete(recursive: true));
       path = '${dir.path}/reminders.json';
 
+      // Ứng dụng nối LinkedTodos sang danh sách việc; ở đây dùng bản giả,
+      // đăng ký trước khi lấy controller.
       sl
         ..registerSingleton<Clock>(clock)
-        ..registerSingleton<IdGenerator>(SequentialIdGenerator());
+        ..registerSingleton<IdGenerator>(SequentialIdGenerator())
+        ..registerSingleton<LinkedTodos>(todos);
       registerReminders(sl);
       // Trỏ file vào thư mục tạm và thay phần chạm hệ điều hành bằng bản giả;
       // phần còn lại giữ như đăng ký.
@@ -110,6 +121,9 @@ void main() {
     test('use case dùng chung một repository và một bộ hẹn giờ', () {
       expect(sl<SaveReminder>(), same(sl<SaveReminder>()));
       expect(sl<GetDueAlerts>(), same(sl<GetDueAlerts>()));
+      expect(sl<FindOpenLinkedTodos>(), same(sl<FindOpenLinkedTodos>()));
+      expect(sl<CompleteLinkedTodos>(), same(sl<CompleteLinkedTodos>()));
+      expect(sl<LinkedTodos>(), same(todos));
       expect(sl<ReminderRepository>(), same(sl<ReminderRepositoryImpl>()));
       expect(sl<RemindersController>().ringsNatively, isFalse);
     });
@@ -134,6 +148,20 @@ void main() {
         );
       },
     );
+
+    test('đánh dấu đã thực hiện qua controller thì tick việc qua LinkedTodos '
+        'đã đăng ký rồi xoá khỏi reminders.json', () async {
+      final controller = await started();
+      await controller.save(reminder('d1', title: 'Nộp', isDeadline: true));
+      todos.open['d1'] = ['Viết báo cáo'];
+
+      expect(await controller.openLinkedTodoTitles('d1'), ['Viết báo cáo']);
+      expect(await controller.markDone('d1'), MarkDoneResult.done);
+
+      expect(todos.completed, ['d1']);
+      expect(controller.reminders, isEmpty);
+      expect(saved(), isEmpty);
+    });
 
     test('cầu nối thấy nhắc nhở đã lưu, lần tới tính theo Clock', () async {
       final controller = await started();

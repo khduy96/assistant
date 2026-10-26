@@ -45,6 +45,15 @@ Deadline vẫn là một mục trong cùng hệ thống báo giờ: tới hạn 
 nhắc nhở thường, và có thể đặt **Báo trước hạn** (mặc định 1 giờ). Khác biệt duy
 nhất là nó không lặp lại — một hạn chót chỉ tới một lần.
 
+Làm xong thì mở menu ⋮ của thẻ deadline và chọn **Đã thực hiện** (menu chỉ có
+**Sửa** và **Đã thực hiện**, deadline không còn nút **Xoá**). Sau khi xác nhận,
+deadline được gỡ khỏi danh sách cùng mọi lần báo còn chờ, và nếu deadline được
+chuyển từ một việc trong danh sách việc cần làm thì việc đó được đánh dấu đã xong
+luôn (hộp thoại xác nhận nêu tên việc). Việc được đánh dấu xong trước, deadline gỡ
+sau: nếu không lưu được việc thì deadline vẫn được giữ và app báo lại để thử lần
+nữa; nếu việc đã lưu xong mà không lưu được việc gỡ deadline thì app báo riêng
+trường hợp đó.
+
 Trên Windows, rê chuột vào icon khay sẽ thấy deadline gần nhất còn bao lâu.
 
 ## Truyền tệp ngang hàng (tab "Gửi tệp")

@@ -6,8 +6,10 @@ import 'data/sync/todo_sync_collection.dart';
 import 'domain/repositories/todo_repository.dart';
 import 'domain/usecases/add_todo.dart';
 import 'domain/usecases/clear_done_todos.dart';
+import 'domain/usecases/complete_todos_linked_to.dart';
 import 'domain/usecases/draft_reminder_from_todo.dart';
 import 'domain/usecases/find_linked_reminder.dart';
+import 'domain/usecases/find_open_todos_linked_to.dart';
 import 'domain/usecases/get_todos.dart';
 import 'domain/usecases/link_reminder.dart';
 import 'domain/usecases/new_todo_id.dart';
@@ -48,6 +50,8 @@ void registerTodos(GetIt sl) {
     ..registerLazySingleton(() => SetLinkedReminderEnabled(sl()))
     ..registerLazySingleton(() => RemoveLinkedReminder(sl()))
     ..registerLazySingleton(() => WatchLinkedReminders(sl()))
+    ..registerLazySingleton(() => FindOpenTodosLinkedTo(sl()))
+    ..registerLazySingleton(() => CompleteTodosLinkedTo(sl(), sl(), sl(), sl()))
     ..registerFactory(
       () => TodosController(
         getTodos: sl(),

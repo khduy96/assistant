@@ -14,7 +14,9 @@ import 'package:event_notice/features/todos/domain/entities/reminder_draft.dart'
 import 'package:event_notice/features/todos/domain/repositories/linked_reminder_repository.dart';
 import 'package:event_notice/features/todos/domain/repositories/todo_repository.dart';
 import 'package:event_notice/features/todos/domain/usecases/add_todo.dart';
+import 'package:event_notice/features/todos/domain/usecases/complete_todos_linked_to.dart';
 import 'package:event_notice/features/todos/domain/usecases/find_linked_reminder.dart';
+import 'package:event_notice/features/todos/domain/usecases/find_open_todos_linked_to.dart';
 import 'package:event_notice/features/todos/domain/usecases/get_todos.dart';
 import 'package:event_notice/features/todos/domain/usecases/save_todo.dart';
 import 'package:event_notice/features/todos/presentation/todo_reminder_editor.dart';
@@ -87,6 +89,11 @@ void main() {
       expect(sl<SaveTodo>(), same(sl<SaveTodo>()));
       expect(sl<FindLinkedReminder>(), same(sl<FindLinkedReminder>()));
       expect(sl<TodoSyncCollection>(), same(sl<TodoSyncCollection>()));
+    });
+
+    test('đăng ký hai use case cho việc gắn với deadline', () {
+      expect(sl<FindOpenTodosLinkedTo>(), same(sl<FindOpenTodosLinkedTo>()));
+      expect(sl<CompleteTodosLinkedTo>(), same(sl<CompleteTodosLinkedTo>()));
     });
 
     test('mỗi lần lấy controller là một controller mới', () {

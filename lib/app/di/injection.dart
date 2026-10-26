@@ -26,12 +26,14 @@ import '../../features/notes/data/sync/note_sync_collection.dart';
 import '../../features/notes/notes_injection.dart';
 import '../../features/p2p/p2p_injection.dart';
 import '../../features/p2p/presentation/p2p_files.dart';
+import '../../features/reminders/domain/ports/linked_todos.dart';
 import '../../features/reminders/reminders_injection.dart';
 import '../../features/todos/data/sync/todo_sync_collection.dart';
 import '../../features/todos/domain/repositories/linked_reminder_repository.dart';
 import '../../features/todos/presentation/todo_reminder_editor.dart';
 import '../../features/todos/todos_injection.dart';
 import 'bridges/linked_reminder_bridge.dart';
+import 'bridges/linked_todos_bridge.dart';
 import 'bridges/p2p_files_bridge.dart';
 import 'bridges/todo_reminder_editor_bridge.dart';
 
@@ -115,9 +117,13 @@ void _registerSync(GetIt sl) {
     );
 }
 
-/// The todo list reaches the reminders only through these two bridges, both
-/// over the `RemindersController` the app shell shows: one queue of alerts
-/// and one OS alarm schedule, whoever edits a reminder.
+/// The todo list reaches the reminders only through the first two bridges,
+/// both over the `RemindersController` the app shell shows: one queue of
+/// alerts and one OS alarm schedule, whoever edits a reminder.
+///
+/// The way back is [LinkedTodosBridge]: marking a deadline done ticks off
+/// the todos turned into it through the todo list's use cases, never its
+/// controller, so the two controllers do not depend on each other.
 void _registerReminderBridges(GetIt sl) {
   sl
     ..registerLazySingleton<LinkedReminderRepository>(
@@ -125,5 +131,6 @@ void _registerReminderBridges(GetIt sl) {
     )
     ..registerLazySingleton<TodoReminderEditor>(
       () => TodoReminderEditorBridge(sl()),
-    );
+    )
+    ..registerLazySingleton<LinkedTodos>(() => LinkedTodosBridge(sl(), sl()));
 }

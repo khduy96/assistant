@@ -69,6 +69,59 @@ Future<void> _confirmDelete(BuildContext context, Reminder reminder) async {
   if (ok == true) await reminders.remove(reminder.id);
 }
 
+/// Asks before marking [deadline] as done, naming the open todo items that
+/// get ticked off with it, then marks it done. Tells the user when the
+/// deadline had to stay because those items could not be ticked off, or when
+/// they were ticked off but deleting the deadline could not be stored.
+Future<void> _confirmDone(BuildContext context, Reminder deadline) async {
+  final reminders = context.read<RemindersController>();
+  final messenger = ScaffoldMessenger.of(context);
+  final todos = await reminders.openLinkedTodoTitles(deadline.id);
+  if (!context.mounted) return;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      // Many linked items make the text taller than a small window.
+      scrollable: true,
+      title: const Text('Đánh dấu đã thực hiện?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('"${deadline.title}" sẽ được gỡ khỏi danh sách deadline.'),
+          for (final todo in todos) ...[
+            const SizedBox(height: 8),
+            Text('Việc "$todo" sẽ được đánh dấu đã xong.'),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Huỷ'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Đã thực hiện'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  final message = switch (await reminders.markDone(deadline.id)) {
+    MarkDoneResult.done => null,
+    MarkDoneResult.todosNotTicked =>
+      'Không đánh dấu xong được việc liên kết nên deadline vẫn được giữ.',
+    MarkDoneResult.deadlineNotRemoved when todos.isNotEmpty =>
+      'Đã đánh dấu xong việc liên kết nhưng không lưu được việc gỡ deadline.',
+    MarkDoneResult.deadlineNotRemoved => 'Không lưu được việc gỡ deadline.',
+  };
+  if (message == null) return;
+  messenger
+    ..clearSnackBars()
+    ..showSnackBar(SnackBar(content: Text(message)));
+}
+
 /// The reminders tab: every reminder that is not a deadline, in display
 /// order. Reads the [RemindersController] from the widget tree.
 class RemindersTab extends StatelessWidget {
@@ -131,7 +184,7 @@ class DeadlinesTab extends StatelessWidget {
           reminder: r,
           now: now,
           onEdit: () => editReminder(context, r),
-          onDelete: () => _confirmDelete(context, r),
+          onDone: () => _confirmDone(context, r),
         );
       },
     );

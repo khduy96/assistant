@@ -151,6 +151,30 @@ void main() {
       final result = await repo.save(_todo('a'));
       expect(result.failureOrNull, isA<StorageFailure>());
     });
+
+    test('ghi lỗi khi sửa thì bộ nhớ giữ bản sửa, lần ghi sau mang nó '
+        'xuống file', () async {
+      await seed([synced('a')]);
+      await repo.init();
+      await File(path).delete();
+      await Directory(path).create();
+
+      final result = await repo.save(_todo('a', title: 'đã sửa'));
+
+      expect(result.failureOrNull, isA<StorageFailure>());
+      expect((await repo.getAll()).valueOrNull?.single.title, 'đã sửa');
+      expect(repo.models.single.dirty, isTrue);
+
+      await Directory(path).delete();
+      expect(await repo.save(_todo('b')), const Ok<void>(null));
+      final reopened = open();
+      await reopened.init();
+      final a = reopened.models.singleWhere((m) => m.id == 'a');
+      expect(a.title, 'đã sửa');
+      expect(a.remoteId, 'obj-a');
+      expect(a.dirty, isTrue);
+      await reopened.dispose();
+    });
   });
 
   group('delete', () {

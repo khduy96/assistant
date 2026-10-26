@@ -13,7 +13,7 @@ class DeadlineCard extends StatelessWidget {
     required this.reminder,
     required this.now,
     required this.onEdit,
-    required this.onDelete,
+    required this.onDone,
   });
 
   final Reminder reminder;
@@ -21,7 +21,9 @@ class DeadlineCard extends StatelessWidget {
   /// The moment the countdown is shown for; the card is rebuilt every second.
   final DateTime now;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+
+  /// The user picked "Đã thực hiện"; the deadline is then taken off the list.
+  final VoidCallback onDone;
 
   static const _overdue = Color(0xFFEF4444);
   static const _urgent = Color(0xFFF59E0B);
@@ -59,10 +61,10 @@ class DeadlineCard extends StatelessWidget {
                     ),
                   ),
                   PopupMenuButton<String>(
-                    onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
+                    onSelected: (v) => v == 'edit' ? onEdit() : onDone(),
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'edit', child: Text('Sửa')),
-                      PopupMenuItem(value: 'delete', child: Text('Xoá')),
+                      PopupMenuItem(value: 'done', child: Text('Đã thực hiện')),
                     ],
                   ),
                 ],

@@ -12,8 +12,10 @@ import '../domain/services/reminder_ordering.dart';
 import '../domain/usecases/alert_from_payload.dart';
 import '../domain/usecases/can_draw_overlays.dart';
 import '../domain/usecases/can_schedule_exact_alarms.dart';
+import '../domain/usecases/complete_linked_todos.dart';
 import '../domain/usecases/delete_reminder.dart';
 import '../domain/usecases/dismiss_alert.dart';
+import '../domain/usecases/find_open_linked_todos.dart';
 import '../domain/usecases/get_due_alerts.dart';
 import '../domain/usecases/get_launch_payload.dart';
 import '../domain/usecases/get_reminders.dart';
@@ -31,6 +33,19 @@ import '../domain/usecases/stop_ringing.dart';
 import '../domain/usecases/test_alarm_ring.dart';
 import '../domain/usecases/watch_reminders.dart';
 import 'reminder_labels.dart';
+
+/// How [RemindersController.markDone] went.
+enum MarkDoneResult {
+  /// The linked todo items were ticked off and the deadline was deleted.
+  done,
+
+  /// The linked todo items could not be ticked off, so the deadline stayed.
+  todosNotTicked,
+
+  /// The linked todo items were ticked off, but deleting the deadline could
+  /// not be stored.
+  deadlineNotRemoved,
+}
 
 /// The reminders on screen, the queue of alerts waiting to be shown, and the
 /// once-a-second ticker that keeps both moving.
@@ -52,6 +67,8 @@ class RemindersController extends ChangeNotifier {
     required this._saveReminder,
     required this._deleteReminder,
     required this._setReminderEnabled,
+    required this._findOpenLinkedTodos,
+    required this._completeLinkedTodos,
     required this._getDueAlerts,
     required this._snoozeAlert,
     required this._dismissAlert,
@@ -77,6 +94,8 @@ class RemindersController extends ChangeNotifier {
   final SaveReminder _saveReminder;
   final DeleteReminder _deleteReminder;
   final SetReminderEnabled _setReminderEnabled;
+  final FindOpenLinkedTodos _findOpenLinkedTodos;
+  final CompleteLinkedTodos _completeLinkedTodos;
   final GetDueAlerts _getDueAlerts;
   final SnoozeAlert _snoozeAlert;
   final DismissAlert _dismissAlert;
@@ -247,10 +266,11 @@ class RemindersController extends ChangeNotifier {
   }
 
   /// Deletes the reminder with [id], along with its alerts in the queue.
-  Future<void> remove(String id) async {
+  /// Returns false when the delete could not be stored.
+  Future<bool> remove(String id) async {
     final passed = List.of(_queue);
     final result = await _deleteReminder((id: id, pending: passed));
-    if (_failed(result)) return;
+    if (_failed(result)) return false;
     final kept = result.valueOrNull ?? passed;
     final dropped = [
       for (final a in passed)
@@ -261,6 +281,28 @@ class RemindersController extends ChangeNotifier {
     _queue.removeWhere((a) => dropped.any((d) => identical(d, a)));
     if (hadAlert && _queue.isEmpty) await _alertsCleared();
     await _afterWrite();
+    return true;
+  }
+
+  /// Titles of the todo items not done yet that point at the reminder with
+  /// [id], so the user can be told [markDone] ticks them off. Empty when there
+  /// are none or they could not be read.
+  Future<List<String>> openLinkedTodoTitles(String id) async {
+    final result = await _findOpenLinkedTodos(id);
+    if (_failed(result)) return const [];
+    return result.valueOrNull ?? const [];
+  }
+
+  /// Marks the deadline with [id] as done: ticks off the todo items that
+  /// point at it first, then deletes it as [remove] does. When the items
+  /// could not be ticked off the deadline stays, so the user can try again.
+  /// Says which step, if any, failed.
+  Future<MarkDoneResult> markDone(String id) async {
+    if (_failed(await _completeLinkedTodos(id))) {
+      return MarkDoneResult.todosNotTicked;
+    }
+    if (!await remove(id)) return MarkDoneResult.deadlineNotRemoved;
+    return MarkDoneResult.done;
   }
 
   // ------------------------------------------------------------------ alerts
