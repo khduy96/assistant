@@ -1,14 +1,18 @@
+import 'package:event_notice/core/sync/data/state_store_sync_preferences.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_budget.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_settings.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_status.dart';
+import 'package:event_notice/core/sync/domain/usecases/get_auto_sync_choice.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_month_requests.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_sync_settings.dart';
 import 'package:event_notice/core/sync/domain/usecases/has_pending_changes.dart';
 import 'package:event_notice/core/sync/domain/usecases/run_sync.dart';
+import 'package:event_notice/core/sync/domain/usecases/set_auto_sync_choice.dart';
 import 'package:event_notice/core/sync/domain/usecases/watch_local_changes.dart';
 import 'package:event_notice/core/sync/presentation/sync_controller.dart';
 import 'package:event_notice/features/clipboard/domain/entities/clip_group.dart';
 import 'package:event_notice/features/clipboard/domain/entities/clip_item.dart';
+import 'package:event_notice/features/clipboard/presentation/clip_actions.dart';
 import 'package:event_notice/features/clipboard/presentation/clipboard_controller.dart';
 import 'package:event_notice/features/clipboard/presentation/clipboard_tab_state.dart';
 import 'package:event_notice/features/clipboard/presentation/pages/clip_tabs.dart';
@@ -51,7 +55,8 @@ void main() {
 
   /// The tab as the home page shows it: the clipboard buttons in the app bar
   /// and the floating button of the open section. [sync] backs the sync
-  /// button; without it the app bar is left out.
+  /// button and a menu holding the home page's "Đồng bộ ngay" entry; without
+  /// it the app bar is left out.
   Widget harness({SyncController? sync}) {
     final page = Scaffold(
       appBar: sync == null
@@ -64,6 +69,16 @@ void main() {
                       context,
                       context.watch<ClipboardTabState>().section,
                     ),
+                  ),
+                ),
+                Builder(
+                  builder: (context) => PopupMenuButton<String>(
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: 'Tuỳ chọn',
+                    onSelected: (v) {
+                      if (v == 'sync') runSync(context);
+                    },
+                    itemBuilder: (_) => [syncNowMenuItem(context, 'sync')],
                   ),
                 ),
               ],
@@ -403,27 +418,32 @@ void main() {
         space: 'nha',
       )
       ..monthRequests = 12;
+    final preferences = StateStoreSyncPreferences(MemorySyncStateStore());
     final sync = SyncController(
       runSync: RunSync(engine),
       hasPendingChanges: HasPendingChanges(engine),
       getMonthRequests: GetMonthRequests(engine),
       watchLocalChanges: WatchLocalChanges(engine),
       getSyncSettings: GetSyncSettings(engine),
+      getAutoSyncChoice: GetAutoSyncChoice(preferences),
+      setAutoSyncChoice: SetAutoSyncChoice(preferences),
       clock: clock,
     );
     addTearDown(sync.dispose);
     await sync.start();
     await pumpTab(tester, clips: [clip('a')], sync: sync);
 
+    // A build with automatic sync off says so, in the tooltip and the icon.
     expect(
       find.byTooltip(
-        'Đồng bộ ngay (nha)\n12 / 3333 request tháng này (máy này)',
+        'Đồng bộ ngay (nha)\n12 / 3333 request tháng này (máy này)\n'
+        'Sync tự động đang tắt — vẫn bấm để đồng bộ tay được',
       ),
       findsOneWidget,
     );
     expect(find.byTooltip('Đang ghi clipboard — chạm để dừng'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.cloud_sync_outlined));
+    await tester.tap(find.byIcon(Icons.cloud_outlined));
     await tester.pump();
     expect(engine.fullRequests, [true]);
     expect(find.text('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
@@ -452,15 +472,21 @@ void main() {
   group('nút đồng bộ theo ngân sách request tháng này', () {
     const budget = SyncBudget.configured;
     final share = budget.deviceShare;
+    const lockedLine = '\nVừa đồng bộ tay — bấm lại được sau 30 giây';
 
-    SyncController syncOn(FakeSyncEngine engine) => SyncController(
-      runSync: RunSync(engine),
-      hasPendingChanges: HasPendingChanges(engine),
-      getMonthRequests: GetMonthRequests(engine),
-      watchLocalChanges: WatchLocalChanges(engine),
-      getSyncSettings: GetSyncSettings(engine),
-      clock: clock,
-    );
+    SyncController syncOn(FakeSyncEngine engine) {
+      final preferences = StateStoreSyncPreferences(MemorySyncStateStore());
+      return SyncController(
+        runSync: RunSync(engine),
+        hasPendingChanges: HasPendingChanges(engine),
+        getMonthRequests: GetMonthRequests(engine),
+        watchLocalChanges: WatchLocalChanges(engine),
+        getSyncSettings: GetSyncSettings(engine),
+        getAutoSyncChoice: GetAutoSyncChoice(preferences),
+        setAutoSyncChoice: SetAutoSyncChoice(preferences),
+        clock: clock,
+      );
+    }
 
     IconButton syncButton(WidgetTester tester, IconData icon) =>
         tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon));
@@ -468,21 +494,26 @@ void main() {
     testWidgets('từ mức cảnh báo thì báo sắp hết, icon như thường', (
       tester,
     ) async {
+      // Automatic sync on, or there is nothing to thin out; the first cycle
+      // reports the same tally.
       final engine = FakeSyncEngine()
         ..settings = const SyncSettings(
           isConfigured: true,
-          autoSync: false,
+          autoSync: true,
           space: 'nha',
         )
-        ..monthRequests = budget.warnAt;
+        ..monthRequests = budget.warnAt
+        ..status = SyncStatus(
+          state: SyncState.ok,
+          monthRequests: budget.warnAt,
+        );
       final sync = syncOn(engine);
-      addTearDown(sync.dispose);
       await sync.start();
       await pumpTab(tester, clips: [clip('a')], sync: sync);
 
       expect(
         find.byTooltip(
-          'Đồng bộ ngay (nha)\n${budget.warnAt} / $share request tháng này '
+          'Đồng bộ ngay\n${budget.warnAt} / $share request tháng này '
           '(máy này)\nSắp hết ngân sách request tháng này nên sync tự động '
           'thưa hơn',
         ),
@@ -493,6 +524,8 @@ void main() {
         isNotNull,
       );
       await finish(tester);
+      // Stops the fallback timer armed after the first cycle.
+      sync.dispose();
     });
 
     testWidgets('hết ngân sách thì sync tự động dừng, icon riêng không đỏ, '
@@ -540,10 +573,11 @@ void main() {
       expect(engine.syncCalls, [(full: true, auto: false, checkRemote: true)]);
       expect(find.text('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
       await tester.pumpAndSettle();
+      // Just pressed, so the button is locked and says so on a last line.
       expect(
         find.byTooltip(
           'Đồng bộ ngay\n${budget.stopAt + 1} / $share request tháng này '
-          '(máy này)$spentNote',
+          '(máy này)$spentNote$lockedLine',
         ),
         findsOneWidget,
       );
@@ -552,6 +586,357 @@ void main() {
       await finish(tester);
       // Stops the fallback timer that watches for the month to change.
       sync.dispose();
+    });
+
+    group('sync tự động đang tắt', () {
+      const offLine = '\nSync tự động đang tắt — vẫn bấm để đồng bộ tay được';
+
+      testWidgets('kể cả khi hết ngân sách: icon đám mây không màu, tooltip '
+          'có cả hai dòng, bấm thì đồng bộ tay đúng một lần', (tester) async {
+        final engine = FakeSyncEngine()
+          ..settings = const SyncSettings(
+            isConfigured: true,
+            autoSync: false,
+            space: 'nha',
+          )
+          ..monthRequests = budget.stopAt
+          // The manual cycle is counted too.
+          ..status = SyncStatus(
+            state: SyncState.ok,
+            monthRequests: budget.stopAt + 1,
+          );
+        final sync = syncOn(engine);
+        addTearDown(sync.dispose);
+        await sync.start();
+        await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+        const spentNote =
+            '\nĐã hết ngân sách request tháng này của máy này — sync tự động '
+            'tạm dừng tới tháng sau, vẫn bấm để đồng bộ tay được';
+        expect(sync.autoSyncEnabled, isFalse);
+        expect(sync.budgetLevel, SyncBudgetLevel.exhausted);
+        expect(engine.syncCalls, isEmpty);
+        expect(
+          find.byTooltip(
+            'Đồng bộ ngay (nha)\n${budget.stopAt} / $share request tháng này '
+            '(máy này)$offLine$spentNote',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.sync_disabled_rounded), findsNothing);
+        expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
+        final icon = tester.widget<Icon>(find.byIcon(Icons.cloud_outlined));
+        expect(icon.color, isNull);
+        expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNotNull);
+
+        await tester.tap(find.byIcon(Icons.cloud_outlined));
+        await tester.pump();
+        expect(engine.syncCalls, [
+          (full: true, auto: false, checkRemote: true),
+        ]);
+        expect(find.text('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
+        await tester.pumpAndSettle();
+        // Just pressed, so the button is locked and says so on a last line.
+        expect(
+          find.byTooltip(
+            'Đồng bộ ngay\n${budget.stopAt + 1} / $share request tháng này '
+            '(máy này)$offLine$spentNote$lockedLine',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.cloud_outlined), findsOneWidget);
+        expect(engine.syncCalls, hasLength(1));
+
+        await finish(tester);
+      });
+
+      testWidgets('lỗi thì vẫn là đám mây gạch màu lỗi', (tester) async {
+        final engine = FakeSyncEngine()
+          ..settings = const SyncSettings(
+            isConfigured: true,
+            autoSync: false,
+            space: 'nha',
+          )
+          ..monthRequests = 12
+          ..status = const SyncStatus(
+            state: SyncState.error,
+            message: 'mất mạng',
+          );
+        final sync = syncOn(engine);
+        addTearDown(sync.dispose);
+        await sync.start();
+        await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+        await tester.tap(find.byIcon(Icons.cloud_outlined));
+        await tester.pumpAndSettle();
+
+        // A failed cycle still locks the button for the whole wait, with the
+        // error said in a snack bar.
+        expect(toast('Đồng bộ lỗi: mất mạng'), findsOneWidget);
+        expect(syncButton(tester, Icons.cloud_off_rounded).onPressed, isNull);
+        clock.current = clock.current.add(SyncController.manualSyncCooldown);
+        await tester.pump(SyncController.manualSyncCooldown);
+
+        expect(sync.status.state, SyncState.error);
+        expect(
+          find.byTooltip(
+            'Đồng bộ lỗi: mất mạng\n12 / $share request tháng này '
+            '(máy này)$offLine',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.cloud_outlined), findsNothing);
+        final icon = tester.widget<Icon>(find.byIcon(Icons.cloud_off_rounded));
+        final scheme = Theme.of(
+          tester.element(find.byType(ClipboardTab)),
+        ).colorScheme;
+        expect(icon.color, scheme.error);
+        expect(
+          syncButton(tester, Icons.cloud_off_rounded).onPressed,
+          isNotNull,
+        );
+
+        await finish(tester);
+      });
+    });
+  });
+
+  group('"Đồng bộ ngay" khoá 30 giây sau mỗi lần bấm', () {
+    const budget = SyncBudget.configured;
+    final share = budget.deviceShare;
+    const offLine = '\nSync tự động đang tắt — vẫn bấm để đồng bộ tay được';
+    const lockedLine = '\nVừa đồng bộ tay — bấm lại được sau 30 giây';
+    const menuText = 'Đồng bộ ngay (clip, việc, ghi chú)';
+    const manual = (full: true, auto: false, checkRemote: true);
+    // What a manual cycle on this engine leaves in the tooltip.
+    final afterCycle =
+        'Đồng bộ ngay\n13 / $share request tháng này (máy này)'
+        '$offLine';
+
+    /// Automatic sync off, so nothing but a press runs a cycle and the
+    /// controller arms no timer of its own.
+    FakeSyncEngine engineOff({bool configured = true}) => FakeSyncEngine()
+      ..settings = SyncSettings(
+        isConfigured: configured,
+        autoSync: false,
+        space: 'nha',
+      )
+      ..monthRequests = 12
+      ..status = const SyncStatus(state: SyncState.ok, monthRequests: 13);
+
+    Future<SyncController> startSync(FakeSyncEngine engine) async {
+      final preferences = StateStoreSyncPreferences(MemorySyncStateStore());
+      final sync = SyncController(
+        runSync: RunSync(engine),
+        hasPendingChanges: HasPendingChanges(engine),
+        getMonthRequests: GetMonthRequests(engine),
+        watchLocalChanges: WatchLocalChanges(engine),
+        getSyncSettings: GetSyncSettings(engine),
+        getAutoSyncChoice: GetAutoSyncChoice(preferences),
+        setAutoSyncChoice: SetAutoSyncChoice(preferences),
+        clock: clock,
+      );
+      addTearDown(sync.dispose);
+      await sync.start();
+      return sync;
+    }
+
+    IconButton syncButton(WidgetTester tester, IconData icon) =>
+        tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon));
+
+    /// Whether the menu's "Đồng bộ ngay" entry can be picked, as read when
+    /// the menu opens; leaves the menu open.
+    Future<bool> menuEnabled(WidgetTester tester) async {
+      // By icon: each clip card has a "Tuỳ chọn" button of its own.
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      return tester
+          .widget<PopupMenuItem<String>>(
+            find.widgetWithText(PopupMenuItem<String>, menuText),
+          )
+          .enabled;
+    }
+
+    /// Dismisses the open menu by tapping its barrier.
+    Future<void> closeMenu(WidgetTester tester) async {
+      await tester.tapAt(const Offset(5, 400));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('bấm nút thì nút và menu cùng khoá, đúng 30 giây sau tự mở '
+        'lại mà không cần thao tác nào', (tester) async {
+      final engine = engineOff();
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+      final pressedAt = clock.current;
+
+      await tester.tap(find.byIcon(Icons.cloud_outlined));
+      await tester.pump();
+      expect(engine.syncCalls, [manual]);
+      expect(toast('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
+      // Same icon, disabled, and the tooltip says why.
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNull);
+      expect(find.byTooltip('$afterCycle$lockedLine'), findsOneWidget);
+      expect(await menuEnabled(tester), isFalse);
+      await closeMenu(tester);
+
+      clock.current = pressedAt.add(const Duration(milliseconds: 29999));
+      await tester.pump(const Duration(milliseconds: 29999));
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNull);
+      expect(find.byTooltip('$afterCycle$lockedLine'), findsOneWidget);
+      expect(await menuEnabled(tester), isFalse);
+      await closeMenu(tester);
+
+      clock.current = pressedAt.add(SyncController.manualSyncCooldown);
+      await tester.pump(SyncController.manualSyncCooldown);
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNotNull);
+      expect(find.byTooltip(afterCycle), findsOneWidget);
+      expect(await menuEnabled(tester), isTrue);
+
+      // The next press, here from the menu, runs a cycle of its own.
+      await tester.tap(find.text(menuText));
+      await tester.pumpAndSettle();
+      expect(engine.syncCalls, [manual, manual]);
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNull);
+
+      // Ends inside the new lock: taking the tab down stops its timer.
+      await finish(tester);
+    });
+
+    testWidgets('máy ngủ quá 30 giây thì thức dậy nút mở lại cùng lúc với '
+        'menu, không chờ Timer của nút', (tester) async {
+      final engine = engineOff();
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+      final pressedAt = clock.current;
+
+      await tester.tap(find.byIcon(Icons.cloud_outlined));
+      await tester.pump();
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNull);
+
+      // Asleep: the wall clock runs on, the button's timer does not. Steps
+      // through each state, as the app's lifecycle listeners expect.
+      void lifecycle(List<AppLifecycleState> states) {
+        for (final state in states) {
+          tester.binding.handleAppLifecycleStateChanged(state);
+        }
+      }
+
+      lifecycle(const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]);
+      clock.current = pressedAt.add(
+        SyncController.manualSyncCooldown + const Duration(seconds: 1),
+      );
+      lifecycle(const [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]);
+      await tester.pump();
+
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNotNull);
+      expect(find.byTooltip(afterCycle), findsOneWidget);
+      expect(await menuEnabled(tester), isTrue);
+      await closeMenu(tester);
+      expect(engine.syncCalls, [manual]);
+      await finish(tester);
+    });
+
+    testWidgets('bấm dồn ở nút và menu chỉ chạy một chu kỳ, một snack bar', (
+      tester,
+    ) async {
+      final engine = engineOff();
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+      // Two taps in one frame both reach the button as it was built, plus a
+      // menu pick racing them; the controller takes only the first.
+      await tester.tap(find.byIcon(Icons.cloud_outlined));
+      await tester.tap(find.byIcon(Icons.cloud_outlined));
+      runSync(tester.element(find.byType(ClipboardTab)));
+      await tester.pump();
+      // A menu opened now has the entry locked; picking it does nothing.
+      expect(await menuEnabled(tester), isFalse);
+      await tester.tap(find.text(menuText));
+      await tester.pump();
+      await closeMenu(tester);
+
+      expect(engine.syncCalls, [manual]);
+      expect(sync.status.monthRequests, 13);
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(toast('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
+      await finish(tester);
+    });
+
+    testWidgets('bấm ở menu thì nút cũng khoá', (tester) async {
+      final engine = engineOff();
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+      expect(await menuEnabled(tester), isTrue);
+      await tester.tap(find.text(menuText));
+      await tester.pumpAndSettle();
+
+      expect(engine.syncCalls, [manual]);
+      expect(toast('Đã đồng bộ — đẩy 0, nhận 0 mục'), findsOneWidget);
+      expect(syncButton(tester, Icons.cloud_outlined).onPressed, isNull);
+      expect(find.byTooltip('$afterCycle$lockedLine'), findsOneWidget);
+      await finish(tester);
+    });
+
+    testWidgets('chu kỳ lỗi vẫn khoá đủ 30 giây và báo lỗi', (tester) async {
+      final engine = engineOff()
+        ..status = const SyncStatus(
+          state: SyncState.error,
+          message: 'mất mạng',
+        );
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+      final pressedAt = clock.current;
+      final failed =
+          'Đồng bộ lỗi: mất mạng\n12 / $share request tháng này '
+          '(máy này)$offLine';
+
+      await tester.tap(find.byIcon(Icons.cloud_outlined));
+      await tester.pump();
+      expect(toast('Đồng bộ lỗi: mất mạng'), findsOneWidget);
+      expect(syncButton(tester, Icons.cloud_off_rounded).onPressed, isNull);
+      expect(find.byTooltip('$failed$lockedLine'), findsOneWidget);
+
+      clock.current = pressedAt.add(const Duration(milliseconds: 29999));
+      await tester.pump(const Duration(milliseconds: 29999));
+      expect(syncButton(tester, Icons.cloud_off_rounded).onPressed, isNull);
+
+      clock.current = pressedAt.add(SyncController.manualSyncCooldown);
+      await tester.pump(SyncController.manualSyncCooldown);
+      expect(syncButton(tester, Icons.cloud_off_rounded).onPressed, isNotNull);
+      expect(find.byTooltip(failed), findsOneWidget);
+      expect(engine.syncCalls, [manual]);
+      await finish(tester);
+    });
+
+    testWidgets('build chưa cấu hình thì nút và mục menu đều tắt', (
+      tester,
+    ) async {
+      final engine = engineOff(configured: false);
+      final sync = await startSync(engine);
+      await pumpTab(tester, clips: [clip('a')], sync: sync);
+
+      expect(
+        find.byTooltip(
+          'Chưa cấu hình — build với --dart-define-from-file=.env để bật '
+          'đồng bộ',
+        ),
+        findsOneWidget,
+      );
+      expect(syncButton(tester, Icons.cloud_off_rounded).onPressed, isNull);
+      expect(await menuEnabled(tester), isFalse);
+      await closeMenu(tester);
+      expect(engine.syncCalls, isEmpty);
+      await finish(tester);
     });
   });
 }

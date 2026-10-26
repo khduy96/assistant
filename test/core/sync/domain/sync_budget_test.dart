@@ -48,6 +48,54 @@ void main() {
     });
   });
 
+  group('pull đầy đủ ở mức warning, trần 24 giờ', () {
+    test('trần là 24 giờ', () {
+      expect(SyncBudget.warningFullPullCap, const Duration(hours: 24));
+    });
+
+    test('ngân sách mặc định: normal 21 giờ, warning 24 giờ thay vì 84', () {
+      expect(
+        byDefault.fullPullEvery(SyncBudgetLevel.normal),
+        const Duration(hours: 21),
+      );
+      expect(
+        byDefault.fullPullEvery(SyncBudgetLevel.warning),
+        const Duration(hours: 24),
+      );
+    });
+
+    test('ngân sách mặc định: mức exhausted giữ normal × 4 = 84 giờ', () {
+      expect(
+        byDefault.fullPullEvery(SyncBudgetLevel.exhausted),
+        const Duration(hours: 84),
+      );
+    });
+
+    test('normal × 4 dưới 24 giờ thì giữ normal × 4', () {
+      const big = SyncBudget(monthlyRequests: 60000, devices: 3);
+      expect(
+        big.fullPullEvery(SyncBudgetLevel.normal),
+        const Duration(hours: 4),
+      );
+      expect(
+        big.fullPullEvery(SyncBudgetLevel.warning),
+        const Duration(hours: 16),
+      );
+    });
+
+    test('normal đã quá 24 giờ thì warning bằng normal, không nhanh hơn', () {
+      const small = SyncBudget(monthlyRequests: 5000, devices: 3);
+      expect(
+        small.fullPullEvery(SyncBudgetLevel.normal),
+        const Duration(hours: 41),
+      );
+      expect(
+        small.fullPullEvery(SyncBudgetLevel.warning),
+        const Duration(hours: 41),
+      );
+    });
+  });
+
   test('khớp công thức trong doc comment', () {
     for (final budget in budgets) {
       final daily = budget.deviceShare / 31;
@@ -97,13 +145,23 @@ void main() {
     for (final budget in budgets) {
       final name = '${budget.monthlyRequests}';
 
-      test('$name: mức warning có mọi khoảng dài hơn mức normal', () {
+      test('$name: mức warning có mọi khoảng, trừ fullPullEvery, dài gấp 4 '
+          'mức normal', () {
         final normal = _intervals(budget, SyncBudgetLevel.normal);
         final warning = _intervals(budget, SyncBudgetLevel.warning);
         for (final key in normal.keys) {
+          if (key == 'fullPullEvery') continue;
           expect(warning[key], greaterThan(normal[key]!), reason: key);
           expect(warning[key], normal[key]! * 4, reason: key);
         }
+      });
+
+      test('$name: fullPullEvery(warning) không ngắn hơn normal, không dài '
+          'hơn normal × 4', () {
+        final normal = budget.fullPullEvery(SyncBudgetLevel.normal);
+        final warning = budget.fullPullEvery(SyncBudgetLevel.warning);
+        expect(warning, greaterThanOrEqualTo(normal));
+        expect(warning, lessThanOrEqualTo(normal * 4));
       });
 
       test('$name: mức exhausted giữ khoảng dự phòng của normal', () {

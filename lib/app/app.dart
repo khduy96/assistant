@@ -158,6 +158,9 @@ class _EventNoticeAppState extends State<EventNoticeApp>
   }
 
   Future<void> _start() async {
+    // Reads the auto-sync choice now, so the ⚙ menu shows it while the lists
+    // below are still loading; start() reuses the same read.
+    unawaited(_sync.load());
     // Only Android asks: elsewhere there is no OS alarm schedule.
     await _reminders.requestPermissions();
     await _reminders.init();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -239,9 +241,50 @@ class _CaptureButton extends StatelessWidget {
 }
 
 /// Sync state at a glance: spins while running, turns red on the last error,
-/// shows a pause once this device has spent its share of the budget.
-class _SyncButton extends StatelessWidget {
+/// shows a plain cloud while the user has automatic sync off, and a pause
+/// once this device has spent its share of the budget.
+///
+/// Disabled for [SyncController.manualSyncCooldown] after a press, and opens
+/// again by itself.
+class _SyncButton extends StatefulWidget {
   const _SyncButton();
+
+  @override
+  State<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends State<_SyncButton> with WidgetsBindingObserver {
+  /// Rebuilds when the clock alone stops holding the lock: the controller
+  /// says when a press takes the lock and when its cycle ends, not when the
+  /// time runs out.
+  Timer? _unlock;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _unlock?.cancel();
+    super.dispose();
+  }
+
+  /// [_unlock] may not count the time the device slept; the clock does, so
+  /// back from sleep the lock is read again, as the ⚙ menu would.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+  }
+
+  void _waitForUnlock(Duration left) {
+    _unlock?.cancel();
+    _unlock = Timer(left, () {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -260,14 +303,20 @@ class _SyncButton extends StatelessWidget {
       );
     }
 
-    // The build's own settings, not the controller's: those are only read
-    // once every list has loaded, and the button is live before that.
+    // The build's own settings, not the controller's: app.dart starts reading
+    // those early, but the button is live before the read ends.
     final configured = context.read<SyncSettings>().isConfigured;
     final failed = status.state == SyncState.error;
     final level = sync.budgetLevel;
+    // The user's choice, so it wins over a spent budget; a tap still syncs.
+    final off = sync.settingsLoaded && !sync.autoSyncEnabled;
     // Automatic sync waits for next month; a tap still syncs, so no red.
     final spent =
         status.state == SyncState.paused || level == SyncBudgetLevel.exhausted;
+    // Just pressed: same icon, but no second cycle until the lock ends.
+    final locked = sync.manualSyncLocked;
+    final left = sync.manualSyncCooldownLeft;
+    if (locked && left > Duration.zero) _waitForUnlock(left);
     return IconButton(
       tooltip: syncTooltip(
         status: status,
@@ -275,11 +324,14 @@ class _SyncButton extends StatelessWidget {
         budget: sync.budget,
         level: level,
         now: DateTime.now(),
+        manualCooldown: locked ? SyncController.manualSyncCooldown : null,
       ),
       icon: Icon(
         configured
             ? (failed
                   ? Icons.cloud_off_rounded
+                  : off
+                  ? Icons.cloud_outlined
                   : spent
                   ? Icons.sync_disabled_rounded
                   : Icons.cloud_sync_outlined)
@@ -287,7 +339,7 @@ class _SyncButton extends StatelessWidget {
         color: failed ? scheme.error : null,
       ),
       // Nothing to open when unconfigured: the .env has to change at build time.
-      onPressed: configured ? () => runSync(context) : null,
+      onPressed: configured && !locked ? () => runSync(context) : null,
     );
   }
 }

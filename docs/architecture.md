@@ -377,11 +377,71 @@ Chi tiết, kèm bảng ước tính chi phí, ở `docs/sync-server-triggers.md
   lượt kiểm server gần nhất đã cách ít nhất R = 14 phút; pull đầy đủ khi lần
   trước đã cũ hơn 21 giờ; timer dự phòng 2 giờ, chỉ chạy khi còn thay đổi chưa
   đẩy.
-- Mức cảnh báo: mọi khoảng trên dài gấp 4, tooltip báo sắp hết ngân sách.
+- Mức cảnh báo: mọi khoảng trên dài gấp 4, trừ pull đầy đủ chỉ tới 24 giờ ở
+  ngân sách mặc định (`max(bình thường, min(bình thường × 4,
+  SyncBudget.warningFullPullCap))`, hằng số này là 24 giờ);
+  tooltip báo sắp hết ngân sách.
 - Đã hết: không chạy chu kỳ tự động nào (đẩy lẫn kéo) tới tháng sau; thay đổi
   local nằm chờ. Nút đồng bộ hiện icon `sync_disabled_rounded` và lý do trong
   tooltip; "Đồng bộ ngay" vẫn chạy và vẫn được đếm. `ParseSyncEngine` chặn chu
   kỳ tự động ngay trước request vượt phần của máy.
+- Sync tự động bật/tắt được khi app đang chạy, ở menu ⚙ "Tuỳ chọn" > "Sync tự
+  động (clip, việc, ghi chú)" (mục có dấu tick, có ở mọi tab trên Windows và
+  Android, bị vô hiệu khi build chưa cấu hình App ID/Client Key).
+  - Máy chưa từng chỉnh dùng giá trị build `PARSE_AUTO_SYNC` (không đặt hoặc
+    khác `0` là bật, `0` là tắt). Đã chỉnh thì lựa chọn của máy thắng giá trị
+    build, theo cả hai chiều. Không đọc được lựa chọn đã lưu thì phiên đó coi
+    như tắt, bất kể giá trị build; lựa chọn đã lưu không bị ghi đè và người
+    dùng vẫn bật lại được.
+  - Lựa chọn lưu trên từng máy, ở key mới `sync_auto` của bảng settings (xem
+    [mục 8.3](#83-key-trong-bảng-settings)). Lựa chọn không đồng bộ qua Back4App
+    và bản thân thao tác bật/tắt không gửi request nào; request chỉ đến từ
+    chu kỳ mà việc bật lại hẹn (xem dòng "Bật lại" bên dưới).
+  - Khác với "đã hết" ở trên: hết ngân sách là app tự tạm dừng (state paused,
+    icon `sync_disabled_rounded`) và tự chạy lại khi sang tháng; còn tắt là
+    người dùng chọn, giữ nguyên tới khi người dùng bật lại, kể cả qua các lần
+    mở lại app.
+  - Khi tắt: nút đồng bộ hiện icon `cloud_outlined` (không tô màu, vẫn bấm
+    được, kể cả khi đồng thời hết ngân sách). Khởi động app, focus/resume, thay
+    đổi local, timer đẩy và timer dự phòng đều không chạy chu kỳ tự động nào;
+    chu kỳ đang chạy dở lúc tắt thì được chạy xong. Thay đổi local nằm chờ.
+    "Đồng bộ ngay" vẫn chạy đủ một chu kỳ và vẫn được đếm.
+  - Bật lại không cần khởi động lại app, hành xử như `onAppActive` cộng thêm
+    việc đẩy thay đổi đang chờ: còn thay đổi chờ thì đẩy sau `pushDelay` của
+    mức hiện tại; không có thì chỉ kiểm server khi lượt kiểm gần nhất đã cách
+    ít nhất R. Nếu máy đã hết phần ngân sách thì vào lại trạng thái paused và
+    chờ sang tháng. Bật lại lúc một chu kỳ đang chạy thì các việc này làm
+    ngay khi chu kỳ đó xong.
+  - Bấm "Đồng bộ ngay" lúc lượt "Đồng bộ ngay" trước đang chạy thì nhận kết
+    quả của lượt đó, không tốn thêm request. Bấm lúc chu kỳ khác đang chạy
+    (tự động, hoặc bấm tay không full) thì đúng một lượt full bấm tay chạy
+    ngay sau chu kỳ đó, cả khi đang tắt hay đã hết ngân sách, và mọi lần bấm
+    đang chờ nhận kết quả của lượt này.
+  - Trạng thái đang áp dụng nằm ở `SyncController` (`autoSyncEnabled`,
+    `settings`) trong `lib/core/sync/presentation/sync_controller.dart`;
+    `SyncSettings.autoSync` lấy từ DI vẫn là giá trị build. UI chỉ đọc từ
+    controller.
+- Khoá 30 giây cho "Đồng bộ ngay", ở mọi mức kể cả khi đã hết ngân sách hay
+  sync tự động đang tắt:
+  - Sau mỗi lần bấm được nhận, nút đồng bộ ở tab clipboard và mục menu ⚙
+    "Đồng bộ ngay (clip, việc, ghi chú)" cùng bị vô hiệu 30 giây tính từ lúc
+    bấm; chu kỳ của lần bấm đó (kể cả lượt xếp hàng sau một chu kỳ đang chạy)
+    lâu hơn thì khoá tới khi chu kỳ xong. Sync lỗi vẫn khoá đủ 30 giây. Bấm
+    dồn chỉ tốn một chu kỳ; lần bấm rơi vào lúc khoá không làm gì và không
+    gửi request. Khoá không áp dụng cho sync tự động.
+  - Khoá nằm ở `SyncController`: `pressSyncNow()` là lối vào của người bấm,
+    nhận khoá trước `await` đầu tiên và trả `null` khi đang khoá;
+    `manualSyncLocked`, `manualSyncCooldownLeft` và hằng
+    `SyncController.manualSyncCooldown` (30 giây) tính theo `Clock` được
+    inject; giờ bị chỉnh lùi về trước lúc bấm thì `manualSyncCooldownLeft`
+    về 0, không bao giờ quá 30 giây. `syncNow` không có khoá, nên các trigger
+    tự động và harness mô phỏng không đổi. Controller không giữ `Timer` nào
+    cho khoá; nút (`_SyncButton` trong `clip_tabs.dart`) tự hẹn `Timer` để vẽ
+    lại khi hết khoá và vẽ lại khi app resume (Timer có thể không đếm lúc máy
+    ngủ), còn mục menu (`syncNowMenuItem` trong `clip_actions.dart`) đọc khoá
+    lúc mở menu.
+  - Khoá chỉ nằm trong bộ nhớ, không lưu qua lần mở app, và không thêm key
+    settings nào.
 - Khi đã đọc được số đếm, tooltip hiện `x / 3333 request tháng này (máy này)`
   (`lib/core/sync/presentation/sync_status_text.dart`).
 - Hai cách giảm request trong `lib/core/sync/data/parse_sync_engine.dart`:
@@ -549,7 +609,9 @@ thì theo mục này. Số dòng dẫn tới code tại commit `9799873` trên `
 
 Bảng `settings(key TEXT PRIMARY KEY, value TEXT)`
 (`lib/clipboard/data/app_database.dart:124-128`) là trạng thái nằm trên đĩa của
-engine. `SyncStateStore` (interface ở `core/sync/domain`, implement SQLite ở
+engine, cộng thêm lựa chọn riêng của từng máy như `sync_auto` (ghi qua
+`StateStoreSyncPreferences`). Vì vậy reset trạng thái engine thì chỉ được xoá
+key của engine, không được xoá `sync_auto`. `SyncStateStore` (interface ở `core/sync/domain`, implement SQLite ở
 `core/data`) phải đọc và ghi **đúng nguyên văn** các key sau. Đổi key thì máy đã
 nâng cấp kéo lại toàn bộ dữ liệu, mất bộ đếm request của tháng và mất danh sách
 inflight.
@@ -565,10 +627,14 @@ inflight.
 | `sync_inflight` | JSON list `<Class>/<localId>` đã gửi nhưng chưa xác nhận | 301-302, 313 |
 | `sync_last_at` | millis lúc chu kỳ sync gần nhất xong | 129 |
 | `sync_req_YYYY-MM` | số request đã dùng trong tháng | 166-167 |
+| `sync_auto` | `1`/`0`: lựa chọn sync tự động của máy này; chưa có key là chưa chỉnh, dùng `PARSE_AUTO_SYNC` | **key mới**, không có trong `sync_service.dart`; ghi ở `lib/core/sync/data/state_store_sync_preferences.dart` |
 
 Ngân sách request/tháng (nhánh `feat/sync-budget`, xem [mục 4](#4-sync-engine))
-không thêm, bớt hay đổi key nào ở bảng trên: mức ngân sách tính từ
-`sync_req_YYYY-MM`, còn ngân sách và số máy là hằng số trong code.
+không thêm, bớt hay đổi key nào: mức ngân sách tính từ `sync_req_YYYY-MM`, còn
+ngân sách và số máy là hằng số trong code. Switch sync tự động (cùng nhánh, xem
+[mục 4](#4-sync-engine)) chỉ thêm đúng một key mới là `sync_auto`, đọc ghi qua
+`SyncStateStore`; mọi key cũ ở bảng trên giữ nguyên văn. Khoá 30 giây của
+"Đồng bộ ngay" (cùng nhánh) chỉ nằm trong bộ nhớ, không thêm key nào.
 
 ### 8.4 Cầu nối todo ↔ nhắc nhở
 
