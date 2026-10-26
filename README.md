@@ -32,7 +32,7 @@ Mỗi nhắc nhở còn có **Nhắc trước** (0/5/10/15/30 phút — báo th�
 để kịp chuẩn bị) và **Báo lại sau** (thời gian snooze).
 
 Nếu máy tắt/đóng app đúng lúc tới giờ, khi mở lại app vẫn báo bù nếu trễ dưới 30 phút
-(`ReminderStore.catchUpWindow`).
+(`GetDueAlerts.catchUpWindow`).
 
 ## Đếm ngược deadline
 
@@ -44,6 +44,15 @@ ghi "QUÁ HẠN" khi đã trễ. Danh sách tự xếp deadline gần nhất lê
 Deadline vẫn là một mục trong cùng hệ thống báo giờ: tới hạn nó rung chuông như
 nhắc nhở thường, và có thể đặt **Báo trước hạn** (mặc định 1 giờ). Khác biệt duy
 nhất là nó không lặp lại — một hạn chót chỉ tới một lần.
+
+Làm xong thì mở menu ⋮ của thẻ deadline và chọn **Đã thực hiện** (menu chỉ có
+**Sửa** và **Đã thực hiện**, deadline không còn nút **Xoá**). Sau khi xác nhận,
+deadline được gỡ khỏi danh sách cùng mọi lần báo còn chờ, và nếu deadline được
+chuyển từ một việc trong danh sách việc cần làm thì việc đó được đánh dấu đã xong
+luôn (hộp thoại xác nhận nêu tên việc). Việc được đánh dấu xong trước, deadline gỡ
+sau: nếu không lưu được việc thì deadline vẫn được giữ và app báo lại để thử lần
+nữa; nếu việc đã lưu xong mà không lưu được việc gỡ deadline thì app báo riêng
+trường hợp đó.
 
 Trên Windows, rê chuột vào icon khay sẽ thấy deadline gần nhất còn bao lâu.
 
@@ -106,15 +115,33 @@ thư mục build, xoá đi là entry hỏng).
 
 ## Cấu trúc
 
-- `lib/models/reminder.dart` — model + toàn bộ logic tính lần báo kế tiếp
-- `lib/services/reminder_store.dart` — bộ đếm giờ 1 giây, hàng đợi chuông, lưu trữ
-- `lib/services/alarm_sound.dart` — phát chuông lặp qua `PlaySound` (winmm) bằng FFI
-- `lib/services/startup_service.dart` — bật/tắt tự khởi động cùng Windows
-- `lib/ui/alarm_screen.dart` — popup báo thức có đồng hồ
-- `lib/ui/home_page.dart`, `lib/ui/reminder_editor.dart` — danh sách và form tạo/sửa
-- `lib/p2p/services/discovery_service.dart` — dò thiết bị trong LAN bằng UDP broadcast
-- `lib/p2p/services/file_server.dart`, `file_sender.dart` — hai đầu của đường truyền HTTP
-- `lib/p2p/state/p2p_store.dart`, `lib/p2p/ui/p2p_tab.dart` — trạng thái và tab "Gửi tệp"
+Clean Architecture, tổ chức theo feature; chi tiết và quy tắc phụ thuộc ở
+[docs/architecture.md](docs/architecture.md).
+
+- `lib/main.dart` — chỉ gọi `bootstrap()` rồi `runApp()`
+- `lib/app/` — `bootstrap.dart` (platform, cửa sổ, cờ dòng lệnh), `app.dart`
+  (`MultiProvider`, theme), `di/` (đăng ký `get_it`, `bridges/` nối các feature với
+  nhau), `shell/` (`HomePage`, khay và cửa sổ desktop, lớp phủ báo thức)
+- `lib/core/` — phần dùng chung: `domain/` (`Clock`, `IdGenerator`, `Result`,
+  `UseCase`, `TimeOfDay`), `data/` (`AppDatabase` SQLite, `JsonFileStore`, …),
+  `platform/` (chuông `PlaySound` qua FFI, tự khởi động cùng Windows, foreground
+  service Android, …), `presentation/` (`format.dart`, logo), `sync/` (engine đồng
+  bộ Back4App: `ParseSyncEngine`, `SyncController`)
+- `lib/features/<feature>/{domain,data,presentation}/` — `reminders`, `todos`,
+  `notes`, `clipboard`, `p2p`; còn `pomodoro` và `running_text` chỉ có
+  `presentation/`. Mỗi feature đăng ký DI trong `<feature>_injection.dart`
+  - `reminders/domain/services/schedule_calculator.dart` — toàn bộ logic tính lần
+    báo kế tiếp; `reminders/presentation/reminders_controller.dart` — bộ đếm giờ
+    1 giây và hàng đợi chuông; `reminders/presentation/pages/alarm_screen.dart` —
+    popup báo thức có đồng hồ
+  - `p2p/data/datasources/` — `discovery_service.dart` (dò thiết bị bằng UDP
+    broadcast), `file_server.dart` và `file_sender.dart` (hai đầu đường truyền
+    HTTP); `p2p/presentation/pages/p2p_tab.dart` — tab "Gửi tệp"
+- `test/` — cùng khung với `lib/`: `test/core/…`,
+  `test/features/<feature>/{domain,data,presentation}/`, `test/tool/`
+- `tool/check_layers.dart` — kiểm quy tắc phụ thuộc giữa các layer (chạy:
+  `dart run tool/check_layers.dart`; mặc định bắt buộc, exit 1 khi có vi phạm;
+  thêm `--warn` để chỉ cảnh báo)
 - `tool/gen_assets.dart` — sinh `assets/sounds/alarm.wav` (chạy: `dart run tool/gen_assets.dart`)
 - `tool/gen_logo.dart` — sinh toàn bộ icon app từ logo (chạy: `flutter test tool/gen_logo.dart`)
 

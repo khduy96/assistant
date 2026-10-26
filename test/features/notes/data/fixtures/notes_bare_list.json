@@ -1,0 +1,22 @@
+[
+  {
+    "id": "old-1",
+    "title": "Wifi",
+    "body": "12345678",
+    "pinned": true,
+    "color": "yellow",
+    "createdAt": "2026-01-02T08:00:00.000",
+    "updatedAt": "2026-01-03T09:30:00.000"
+  },
+  {
+    "id": "old-2",
+    "title": "",
+    "body": "mua sữa",
+    "pinned": false,
+    "createdAt": "2026-01-04T10:00:00.000"
+  },
+  {
+    "id": "old-3",
+    "body": "không có mốc thời gian"
+  }
+]
