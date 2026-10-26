@@ -4,15 +4,18 @@ import 'dart:math';
 import 'package:event_notice/core/domain/clock.dart';
 import 'package:event_notice/core/sync/data/parse_config.dart';
 import 'package:event_notice/core/sync/data/parse_sync_engine.dart';
+import 'package:event_notice/core/sync/data/state_store_sync_preferences.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_budget.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_settings.dart';
 import 'package:event_notice/core/sync/domain/entities/sync_status.dart';
 import 'package:event_notice/core/sync/domain/sync_channel.dart';
 import 'package:event_notice/core/sync/domain/sync_engine.dart';
+import 'package:event_notice/core/sync/domain/usecases/get_auto_sync_choice.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_month_requests.dart';
 import 'package:event_notice/core/sync/domain/usecases/get_sync_settings.dart';
 import 'package:event_notice/core/sync/domain/usecases/has_pending_changes.dart';
 import 'package:event_notice/core/sync/domain/usecases/run_sync.dart';
+import 'package:event_notice/core/sync/domain/usecases/set_auto_sync_choice.dart';
 import 'package:event_notice/core/sync/domain/usecases/watch_local_changes.dart';
 import 'package:event_notice/core/sync/presentation/sync_controller.dart';
 import 'package:fake_async/fake_async.dart';
@@ -214,6 +217,8 @@ class SimDevice {
       getMonthRequests: GetMonthRequests(engine),
       watchLocalChanges: WatchLocalChanges(engine),
       getSyncSettings: GetSyncSettings(engine),
+      getAutoSyncChoice: GetAutoSyncChoice(StateStoreSyncPreferences(state)),
+      setAutoSyncChoice: SetAutoSyncChoice(StateStoreSyncPreferences(state)),
       clock: clock,
       budget: budget,
     );

@@ -8,15 +8,19 @@ import '../../core/domain/clock.dart';
 import '../../core/domain/id_generator.dart';
 import '../../core/sync/data/parse_config.dart';
 import '../../core/sync/data/parse_sync_engine.dart';
+import '../../core/sync/data/state_store_sync_preferences.dart';
 import '../../core/sync/domain/entities/sync_budget.dart';
 import '../../core/sync/domain/entities/sync_settings.dart';
 import '../../core/sync/domain/sync_channel.dart';
 import '../../core/sync/domain/sync_engine.dart';
+import '../../core/sync/domain/sync_preferences.dart';
 import '../../core/sync/domain/sync_state_store.dart';
+import '../../core/sync/domain/usecases/get_auto_sync_choice.dart';
 import '../../core/sync/domain/usecases/get_month_requests.dart';
 import '../../core/sync/domain/usecases/get_sync_settings.dart';
 import '../../core/sync/domain/usecases/has_pending_changes.dart';
 import '../../core/sync/domain/usecases/run_sync.dart';
+import '../../core/sync/domain/usecases/set_auto_sync_choice.dart';
 import '../../core/sync/domain/usecases/watch_local_changes.dart';
 import '../../core/sync/presentation/sync_controller.dart';
 import '../../features/clipboard/clipboard_injection.dart';
@@ -93,14 +97,22 @@ void _registerSync(GetIt sl) {
         ],
       ),
     )
-    // Fixed at build time, so known before the controller starts: the sync
-    // button reads it to be enabled from the first frame, as it always was.
+    // Fixed at build time, so known before the controller starts: read it
+    // only for isConfigured and space (the sync button is enabled from the
+    // first frame, as it always was). Its autoSync is the build value; the
+    // UI reads the applied one from SyncController.autoSyncEnabled.
     ..registerLazySingleton<SyncSettings>(() => sl<SyncEngine>().settings)
+    // The user's auto-sync choice, kept per device next to the engine's keys.
+    ..registerLazySingleton<SyncPreferences>(
+      () => StateStoreSyncPreferences(sl<SyncStateStore>()),
+    )
     ..registerLazySingleton(() => RunSync(sl()))
     ..registerLazySingleton(() => HasPendingChanges(sl()))
     ..registerLazySingleton(() => GetMonthRequests(sl()))
     ..registerLazySingleton(() => WatchLocalChanges(sl()))
     ..registerLazySingleton(() => GetSyncSettings(sl()))
+    ..registerLazySingleton(() => GetAutoSyncChoice(sl()))
+    ..registerLazySingleton(() => SetAutoSyncChoice(sl()))
     // A single controller: it owns the push and fallback timers.
     ..registerLazySingleton(
       () => SyncController(
@@ -109,6 +121,8 @@ void _registerSync(GetIt sl) {
         getMonthRequests: sl(),
         watchLocalChanges: sl(),
         getSyncSettings: sl(),
+        getAutoSyncChoice: sl(),
+        setAutoSyncChoice: sl(),
         clock: sl(),
         budget: sl(),
       ),

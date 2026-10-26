@@ -55,13 +55,21 @@ Cách chạy:
   30 giây kể từ lần sửa cuối; pull khi focus/restore/resume app nếu lượt kiểm
   server gần nhất đã cách ít nhất R (14 phút ở mặc định). Timer dự phòng 2 giờ/lần
   chỉ chạy chu kỳ khi máy còn thay đổi chưa đẩy được.
+- Khi người dùng tắt sync tự động (menu ⚙ "Tuỳ chọn" > "Sync tự động (clip,
+  việc, ghi chú)"), ở mọi mức ngân sách không trigger tự động nào ở trên chạy: không
+  chu kỳ lúc khởi động, không đẩy sau lần sửa, không kéo khi focus/resume, không
+  timer dự phòng. Chỉ còn "Đồng bộ ngay". Máy chưa từng chỉnh lấy mặc định từ
+  `PARSE_AUTO_SYNC` của build; lựa chọn lưu trên từng máy (key `sync_auto` trong
+  bảng `settings`) và không đồng bộ qua Back4App. Không đọc được key này thì
+  phiên đó coi như tắt, và giá trị đã lưu không bị ghi đè. Xem
+  [Khi gần hết hoặc đã hết](#khi-gần-hết-hoặc-đã-hết).
 - Clip tạm không được đồng bộ.
 
 Hạn chế:
 
 1. Máy chạy bản cũ đẩy dữ liệu mà không tăng bộ đếm. Máy khác chỉ thấy thay đổi đó
-   ở lần pull đầy đủ: trễ tối đa 21 giờ ở mức bình thường, 84 giờ ở mức cảnh báo,
-   và không tự tới khi máy đã hết phần ngân sách.
+   ở lần pull đầy đủ: trễ tối đa 21 giờ ở mức bình thường, 24 giờ ở mức cảnh báo,
+   và không tự tới khi máy đã hết phần ngân sách hoặc đang tắt sync tự động.
 2. Class từ 500 bản ghi trở lên vẫn tốn thêm 1 request cho mỗi 500 bản ghi ở mọi
    lần pull class đó. Class nhỏ hơn thì tốn băng thông vì tải lại cả class.
 
@@ -104,7 +112,7 @@ Các mốc thời gian ở ngân sách mặc định:
 |---|---|---|---|
 | Đẩy sau lần sửa cuối | 30 giây | 2 phút | không tự đẩy |
 | R: focus/resume kéo nếu lượt kiểm gần nhất đã cách | 14 phút | 56 phút | không tự kéo |
-| Pull đầy đủ khi lần trước đã cũ hơn | 21 giờ | 84 giờ | không tự kéo |
+| Pull đầy đủ khi lần trước đã cũ hơn | 21 giờ | 24 giờ | không tự kéo |
 | Timer dự phòng | 2 giờ | 8 giờ | 2 giờ, chỉ xem đã sang tháng chưa |
 
 Cách tính (doc comment trong `sync_budget.dart`), với
@@ -115,7 +123,10 @@ Cách tính (doc comment trong `sync_budget.dart`), với
 - Pull đầy đủ = `24 × 9 / (0,1 × phần mỗi ngày)` giờ, làm tròn lên: pull đầy đủ,
   coi như 9 request mỗi lần, tiêu tối đa 10% phần mỗi ngày.
 - Đẩy sau 30 giây và timer dự phòng 2 giờ là mốc cố định ở mức bình thường.
-- Ở mức cảnh báo, mọi khoảng dài gấp 4.
+- Ở mức cảnh báo, mọi khoảng dài gấp 4, trừ pull đầy đủ:
+  `max(bình thường, min(bình thường × 4, SyncBudget.warningFullPullCap))`, với
+  `warningFullPullCap` = 24 giờ, tức 24 giờ ở ngân sách mặc định, để thay đổi
+  từ máy chạy bản cũ không trễ quá một ngày.
 
 ### Khi gần hết hoặc đã hết
 
@@ -134,10 +145,55 @@ Cách tính (doc comment trong `sync_budget.dart`), với
   - **"Đồng bộ ngay" vẫn chạy đủ một chu kỳ** (kèm pull đầy đủ) và vẫn được đếm.
   - Thay đổi làm trong lúc này được đẩy ở lần sync kế tiếp được phép: lần bấm tay,
     hoặc trigger đầu tiên của tháng sau (focus, sửa, hoặc tick dự phòng, chậm nhất
-    2 giờ sau khi sang tháng).
+    2 giờ sau khi sang tháng), nếu lúc đó sync tự động đang bật.
+- **Người dùng tắt sync tự động** (khác với hai trạng thái trên, vốn do app tự
+  chuyển theo số request):
+  - Không trigger tự động nào chạy, ở mọi mức, cho tới khi người dùng bật lại;
+    lựa chọn giữ qua các lần mở lại app. Chu kỳ đang chạy dở lúc tắt thì được
+    chạy xong. Thay đổi local nằm chờ như khi hết ngân sách.
+  - Nút đồng bộ đổi sang icon `cloud_outlined` (không tô màu, vẫn bấm được).
+    Tooltip có dòng "Sync tự động đang tắt — vẫn bấm để đồng bộ tay được", và
+    không còn dòng "Sắp hết ngân sách ... thưa hơn".
+  - Tắt khi máy đồng thời đã hết ngân sách: icon vẫn là `cloud_outlined`, nhưng
+    tooltip vẫn hiện dòng hết ngân sách cạnh dòng đang tắt, để biết bật lại cũng
+    chưa chạy cho tới tháng sau.
+  - **"Đồng bộ ngay" vẫn chạy đủ một chu kỳ** và vẫn được đếm. Bấm lúc chu kỳ
+    tự động dở dang từ trước khi tắt còn đang chạy thì lượt bấm tay chạy ngay
+    sau chu kỳ đó.
+  - Bật lại thì không cần khởi động lại app: còn thay đổi chờ thì đẩy sau mốc
+    "đẩy sau lần sửa cuối" của mức hiện tại; không có thì chỉ kéo khi lượt kiểm
+    gần nhất đã cách ít nhất R, như khi focus/resume. Đã hết ngân sách thì vẫn
+    tạm dừng tới tháng sau.
+  - Bản thân thao tác bật/tắt không gửi request nào. Tắt thì sau đó không còn
+    request tự động nào; bật lại chỉ gửi request qua chu kỳ nói ở dòng trên:
+    lần đẩy thay đổi chờ sau mốc "đẩy sau lần sửa cuối", hoặc một chu kỳ kiểm
+    server khi lượt kiểm gần nhất đã cũ hơn R.
 
 Ở mọi mức, khi đã đọc được số đếm, tooltip hiện
 `x / 3333 request tháng này (máy này)`.
+
+### Khoá 30 giây sau khi bấm "Đồng bộ ngay"
+
+Áp dụng ở mọi mức ở trên, kể cả khi đã hết ngân sách hay sync tự động đang tắt:
+
+- Sau mỗi lần bấm được nhận, nút đồng bộ ở tab clipboard và mục menu ⚙ "Đồng bộ
+  ngay (clip, việc, ghi chú)" cùng bị khoá (vô hiệu) 30 giây, tính từ lúc bấm.
+  Chu kỳ của lần bấm đó chạy lâu hơn 30 giây (kể cả khi phải xếp hàng sau một
+  chu kỳ đang chạy) thì khoá kéo dài tới khi chu kỳ đó xong. Sync lỗi vẫn khoá
+  đủ 30 giây, và vẫn hiện thông báo lỗi như trước. Giờ hệ thống bị chỉnh lùi về
+  trước lúc bấm thì phần khoá theo giờ hết ngay, nên khoá không bao giờ quá 30
+  giây (trừ khi chu kỳ còn chạy).
+- Hết khoá thì nút tự bấm được lại, không cần thao tác gì. Mục menu đọc khoá lúc
+  mở menu. Máy ngủ rồi thức (app resume) thì nút đọc lại khoá ngay, nên mở lại
+  cùng lúc với mục menu. Trong lúc khoá, tooltip nút có thêm dòng cuối "Vừa đồng
+  bộ tay — bấm lại được sau 30 giây".
+- Bấm dồn (bấm liên tiếp ở nút, ở menu, hay cả hai) chỉ tốn một chu kỳ. Lần bấm
+  rơi vào lúc khoá không làm gì, không gửi request và không hiện thông báo.
+- Khoá chỉ áp dụng cho lần bấm tay. Sync tự động (đẩy sau lần sửa cuối,
+  focus/resume, timer dự phòng, bật lại sync tự động) vẫn chạy như khi không
+  khoá.
+- Khoá chỉ nằm trong bộ nhớ, không lưu qua lần mở app: thoát hẳn app rồi mở lại
+  thì bấm được ngay. Không thêm key nào vào bảng `settings`.
 
 ### Ước tính chi phí
 
@@ -163,7 +219,13 @@ Workload nặng: 100 lượt sửa/ngày, 200 lần focus/máy/ngày, cùng số
 Cả 3 máy chạm ngưỡng cảnh báo vào ngày 11 và hết phần vào ngày 18. Request của
 các chu kỳ tự động trên mỗi máy không vượt 3.333 (cao nhất 3.248). Tổng cả tháng
 khoảng 12.700 (127%), phần vượt là request bấm tay, vốn không bị chặn. Dữ liệu
-vẫn hội tụ sau khi các máy đồng bộ tay.
+vẫn hội tụ sau khi các máy đồng bộ tay. Cả hai workload đã được đo lại sau
+khi pull đầy đủ ở mức cảnh báo bị giới hạn 24 giờ, và các số trên không đổi.
+
+Các số trên cũng không đổi khi thêm khoá 30 giây của "Đồng bộ ngay": harness mô
+phỏng (`test/core/sync/simulation/sync_simulation_harness.dart`) gọi thẳng
+`SyncController.syncNow(full: true)`, không qua `pressSyncNow`, nên không đi qua
+khoá. Với 1 lần bấm/máy/ngày thì khoá vốn cũng không chặn lần nào.
 
 ## Phương án trigger (đã loại)
 

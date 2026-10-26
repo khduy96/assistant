@@ -21,17 +21,29 @@ const _warning =
 const _exhausted =
     '\nĐã hết ngân sách request tháng này của máy này — sync tự động tạm dừng'
     ' tới tháng sau, vẫn bấm để đồng bộ tay được';
+const _off = '\nSync tự động đang tắt — vẫn bấm để đồng bộ tay được';
+const _cooldown = Duration(seconds: 30);
+const _locked = '\nVừa đồng bộ tay — bấm lại được sau 30 giây';
 
 String _text(
   SyncStatus status, {
   SyncBudget budget = _budget,
   SyncBudgetLevel? level,
+  bool autoSync = true,
+  Duration? manualCooldown,
 }) => syncTooltip(
   status: status,
-  settings: _settings,
+  settings: autoSync
+      ? _settings
+      : SyncSettings(
+          isConfigured: _settings.isConfigured,
+          autoSync: false,
+          space: _settings.space,
+        ),
   budget: budget,
   level: level ?? budget.levelFor(status.monthRequests ?? 0),
   now: _now,
+  manualCooldown: manualCooldown,
 );
 
 void main() {
@@ -156,11 +168,177 @@ void main() {
     });
   });
 
+  group('sync tự động đang tắt', () {
+    test('chưa cấu hình vẫn chỉ có câu chưa cấu hình', () {
+      expect(
+        _text(
+          const SyncStatus(state: SyncState.notConfigured, monthRequests: 12),
+          autoSync: false,
+        ),
+        'Chưa cấu hình — build với --dart-define-from-file=.env để bật đồng bộ',
+      );
+    });
+
+    test('normal thêm dòng tắt ngay sau dòng đếm', () {
+      expect(
+        _text(
+          const SyncStatus(state: SyncState.idle, monthRequests: 12),
+          autoSync: false,
+        ),
+        'Đồng bộ ngay (nha)\n12 / 3000 request tháng này (máy này)$_off',
+      );
+    });
+
+    test('warning không còn dòng thưa hơn', () {
+      final text = _text(
+        const SyncStatus(state: SyncState.ok, monthRequests: 2100),
+        autoSync: false,
+      );
+      expect(
+        text,
+        'Đồng bộ ngay\n2100 / 3000 request tháng này (máy này)$_off',
+      );
+      expect(text, isNot(contains('thưa hơn')));
+    });
+
+    test('paused vẫn báo hết ngân sách, sau dòng tắt', () {
+      expect(
+        _text(
+          const SyncStatus(
+            state: SyncState.paused,
+            message: 'Đã dùng hết ngân sách request tháng này của máy này',
+            monthRequests: 3000,
+          ),
+          autoSync: false,
+        ),
+        'Đồng bộ ngay (nha)\n3000 / 3000 request tháng này (máy này)'
+        '$_off$_exhausted',
+      );
+    });
+
+    test('exhausted sau một lần bấm tay vẫn báo đã hết, sau dòng tắt', () {
+      expect(
+        _text(
+          SyncStatus(
+            state: SyncState.ok,
+            lastSyncAt: _now,
+            pushed: 1,
+            monthRequests: 3012,
+          ),
+          autoSync: false,
+        ),
+        'Đồng bộ lần cuối vừa xong · đẩy 1, nhận 0\n'
+        '3012 / 3000 request tháng này (máy này)$_off$_exhausted',
+      );
+    });
+
+    test('lỗi giữ câu lỗi và dòng đếm, thêm dòng tắt', () {
+      expect(
+        _text(
+          const SyncStatus(
+            state: SyncState.error,
+            message: 'Không có kết nối mạng',
+            monthRequests: 12,
+          ),
+          autoSync: false,
+        ),
+        'Đồng bộ lỗi: Không có kết nối mạng\n'
+        '12 / 3000 request tháng này (máy này)$_off',
+      );
+    });
+
+    test('chưa biết số request thì dòng tắt nằm ngay sau câu đầu', () {
+      expect(
+        _text(const SyncStatus(state: SyncState.idle), autoSync: false),
+        'Đồng bộ ngay (nha)$_off',
+      );
+    });
+  });
+
+  group('đang khoá đồng bộ tay thêm một dòng cuối', () {
+    test('ok có dòng đếm', () {
+      expect(
+        _text(
+          SyncStatus(
+            state: SyncState.ok,
+            lastSyncAt: _now,
+            pushed: 1,
+            monthRequests: 12,
+          ),
+          manualCooldown: _cooldown,
+        ),
+        'Đồng bộ lần cuối vừa xong · đẩy 1, nhận 0\n'
+        '12 / 3000 request tháng này (máy này)$_locked',
+      );
+    });
+
+    test(
+      'tắt sync tự động và hết ngân sách: dòng cũ giữ thứ tự, khoá ở cuối',
+      () {
+        expect(
+          _text(
+            SyncStatus(
+              state: SyncState.ok,
+              lastSyncAt: _now,
+              pushed: 1,
+              monthRequests: 3012,
+            ),
+            autoSync: false,
+            manualCooldown: _cooldown,
+          ),
+          'Đồng bộ lần cuối vừa xong · đẩy 1, nhận 0\n'
+          '3012 / 3000 request tháng này (máy này)$_off$_exhausted$_locked',
+        );
+      },
+    );
+
+    test('lỗi', () {
+      expect(
+        _text(
+          const SyncStatus(
+            state: SyncState.error,
+            message: 'Không có kết nối mạng',
+            monthRequests: 12,
+          ),
+          manualCooldown: _cooldown,
+        ),
+        'Đồng bộ lỗi: Không có kết nối mạng\n'
+        '12 / 3000 request tháng này (máy này)$_locked',
+      );
+    });
+
+    test('số giây theo độ dài khoá truyền vào', () {
+      expect(
+        _text(
+          const SyncStatus(state: SyncState.idle),
+          manualCooldown: const Duration(seconds: 45),
+        ),
+        'Đồng bộ ngay (nha)\nVừa đồng bộ tay — bấm lại được sau 45 giây',
+      );
+    });
+
+    test('chưa cấu hình vẫn chỉ có câu chưa cấu hình', () {
+      expect(
+        _text(
+          const SyncStatus(state: SyncState.notConfigured, monthRequests: 12),
+          manualCooldown: _cooldown,
+        ),
+        'Chưa cấu hình — build với --dart-define-from-file=.env để bật đồng bộ',
+      );
+    });
+  });
+
   test('không chuỗi nào gọi ngân sách là hạn mức của Back4App', () {
     final texts = [
-      for (final state in SyncState.values)
-        for (final used in [null, 0, 2100, 3000, 4000])
-          _text(SyncStatus(state: state, message: 'x', monthRequests: used)),
+      for (final autoSync in [true, false])
+        for (final cooldown in [null, _cooldown])
+          for (final state in SyncState.values)
+            for (final used in [null, 0, 2100, 3000, 4000])
+              _text(
+                SyncStatus(state: state, message: 'x', monthRequests: used),
+                autoSync: autoSync,
+                manualCooldown: cooldown,
+              ),
     ];
     for (final text in texts) {
       expect(text, isNot(contains('Back4App')));

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/sync/domain/entities/sync_settings.dart';
 import '../../../core/sync/domain/entities/sync_status.dart';
 import '../../../core/sync/presentation/sync_controller.dart';
 import '../domain/entities/clip_group.dart';
@@ -39,10 +40,13 @@ Future<void> togglePinClip(BuildContext context, ClipItem item) async {
 }
 
 /// Runs a sync cycle and reports the outcome — an icon alone is easy to miss.
+///
+/// Goes through [SyncController.pressSyncNow]: a press while
+/// [SyncController.manualSyncLocked] does nothing and shows nothing.
 Future<void> runSync(BuildContext context) async {
   final sync = context.read<SyncController>();
-  final status = await sync.syncNow(full: true);
-  if (!context.mounted) return;
+  final status = await sync.pressSyncNow();
+  if (status == null || !context.mounted) return;
 
   final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
   if (status.state == SyncState.error) {
@@ -59,6 +63,18 @@ Future<void> runSync(BuildContext context) async {
     );
   }
 }
+
+/// The "Đồng bộ ngay" entry of a menu, picked as [value]; the caller runs
+/// [runSync] for it. Read when the menu opens, so a menu left open while the
+/// lock runs out stays locked until it is opened again.
+PopupMenuItem<T> syncNowMenuItem<T>(BuildContext context, T value) =>
+    PopupMenuItem<T>(
+      value: value,
+      enabled:
+          context.read<SyncSettings>().isConfigured &&
+          !context.read<SyncController>().manualSyncLocked,
+      child: const Text('Đồng bộ ngay (clip, việc, ghi chú)'),
+    );
 
 /// Bottom sheet with every per-clip action.
 Future<void> showClipActions(BuildContext context, ClipItem item) async {

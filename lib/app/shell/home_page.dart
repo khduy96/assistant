@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../../core/platform/startup_service.dart';
 import '../../core/presentation/format.dart';
 import '../../core/sync/domain/entities/sync_settings.dart';
+import '../../core/sync/presentation/auto_sync_toggle.dart';
+import '../../core/sync/presentation/sync_controller.dart';
 import '../../features/clipboard/presentation/clip_actions.dart';
 import '../../features/clipboard/presentation/clipboard_controller.dart';
 import '../../features/clipboard/presentation/clipboard_tab_state.dart';
@@ -248,14 +250,21 @@ class _SettingsMenuState extends State<_SettingsMenu> {
             _requestOverlay();
           case 'sync':
             runSync(context);
+          case 'autosync':
+            toggleAutoSync(context);
         }
       },
       itemBuilder: (_) => [
         // Reachable from every tab: one cycle covers clips, việc and ghi chú.
-        PopupMenuItem(
-          value: 'sync',
-          enabled: context.read<SyncSettings>().isConfigured,
-          child: const Text('Đồng bộ ngay (clip, việc, ghi chú)'),
+        syncNowMenuItem(context, 'sync'),
+        // What is applied on this device, not the build's own setting; locked
+        // until the choice has been read.
+        CheckedPopupMenuItem(
+          value: 'autosync',
+          checked: context.read<SyncController>().autoSyncEnabled,
+          enabled: context.read<SyncSettings>().isConfigured &&
+              context.read<SyncController>().settingsLoaded,
+          child: const Text('Sync tự động (clip, việc, ghi chú)'),
         ),
         const PopupMenuDivider(),
         if (android) ...[

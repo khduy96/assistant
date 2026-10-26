@@ -40,10 +40,14 @@ enum SyncBudgetLevel {
 ///   rounded up: full pulls, about 9 requests each, spend at most a tenth of
 ///   the daily allowance.
 /// * `pushDelay(normal)` = 30 seconds and `fallbackInterval(normal)` = 2 hours.
-/// * At [SyncBudgetLevel.warning] every interval is 4 times longer.
+/// * At [SyncBudgetLevel.warning] every interval is 4 times longer, except
+///   `fullPullEvery(warning)` = `max(normal, min(normal × 4, 24 hours))`
+///   ([warningFullPullCap]): a full pull never waits more than a day, unless
+///   the normal interval is already longer.
 /// * At [SyncBudgetLevel.exhausted] automatic cycles do not run. The fallback
 ///   tick keeps its normal interval, since it then only checks locally whether
-///   the month has changed; the other intervals stay at their warning values.
+///   the month has changed; `fullPullEvery` is `normal × 4`, without the cap,
+///   and the other intervals stay at their warning values.
 class SyncBudget {
   const SyncBudget({required this.monthlyRequests, required this.devices})
     : assert(devices > 0),
@@ -78,6 +82,10 @@ class SyncBudget {
 
   /// How many times longer every interval gets at [SyncBudgetLevel.warning].
   static const int warningSlowdown = 4;
+
+  /// Longest wait between full pulls at [SyncBudgetLevel.warning], unless
+  /// `fullPullEvery(normal)` is already longer.
+  static const Duration warningFullPullCap = Duration(hours: 24);
 
   /// Quiet time after a local change before it goes out, so a burst of edits
   /// travels in one cycle.
@@ -125,16 +133,22 @@ class SyncBudget {
 
   /// A pull reads every class again, counters or not, once the last full pull
   /// is at least this old.
-  Duration fullPullEvery(SyncBudgetLevel level) => _slowed(
-    level,
+  ///
+  /// At [SyncBudgetLevel.warning] it is 4 times the normal interval but no
+  /// more than [warningFullPullCap], and never shorter than the normal one.
+  Duration fullPullEvery(SyncBudgetLevel level) {
     // 24 × 9 / (0.1 × share / 31) hours, in whole numbers.
-    Duration(
+    final normal = Duration(
       hours: _ceilDiv(
         _hoursPerDay * fullPullRequests * daysPerMonth * 100,
         fullPullSharePercent * deviceShare,
       ),
-    ),
-  );
+    );
+    final slowed = _slowed(level, normal);
+    if (level != SyncBudgetLevel.warning) return slowed;
+    final capped = slowed < warningFullPullCap ? slowed : warningFullPullCap;
+    return capped > normal ? capped : normal;
+  }
 
   /// Quiet time after a local change before it goes out.
   Duration pushDelay(SyncBudgetLevel level) => _slowed(level, normalPushDelay);

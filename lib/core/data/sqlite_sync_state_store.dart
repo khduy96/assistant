@@ -4,7 +4,9 @@ import '../sync/domain/sync_state_store.dart';
 import 'app_database.dart';
 
 /// [SyncStateStore] on the `settings` table of the clipboard database, where
-/// the sync engine has always kept its cursors and counters.
+/// the sync engine has always kept its cursors and counters. The table also
+/// holds per-device user choices such as `sync_auto`, so resetting the
+/// engine's keys must not wipe them.
 class SqliteSyncStateStore implements SyncStateStore {
   SqliteSyncStateStore(this._appDb);
 
